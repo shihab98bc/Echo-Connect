@@ -1,6 +1,6 @@
 'use client';
 
-import { AppUser, Contact, Call } from './app-shell';
+import { AppUser, Contact, Call, Update } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -11,11 +11,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 interface MainViewProps {
   user: AppUser;
   contacts: Contact[];
-  updates: any[];
+  updates: Update[];
   calls: Call[];
   onStartChat: (contact: Contact) => void;
   onOpenAddFriend: () => void;
   onOpenProfile: () => void;
+  onAcceptRequest: (request: Update) => void;
+  onRejectRequest: (request: Update) => void;
 }
 
 const ListItem = ({ children }: { children: React.ReactNode }) => (
@@ -62,7 +64,7 @@ const CallLogItem = ({ call }: { call: Call }) => (
     </ListItem>
 );
 
-const UpdateItem = ({ update }: { update: any }) => {
+const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: (req: Update) => void, onReject: (req: Update) => void }) => {
     if (update.type === 'request') {
         return (
             <div className="p-4 bg-secondary/50 rounded-lg">
@@ -73,8 +75,8 @@ const UpdateItem = ({ update }: { update: any }) => {
                         <p>{update.from.name}</p>
                     </div>
                     <div className="flex gap-2">
-                        <Button size="sm" variant="outline">Reject</Button>
-                        <Button size="sm">Accept</Button>
+                        <Button size="sm" variant="outline" onClick={() => onReject(update)}>Reject</Button>
+                        <Button size="sm" onClick={() => onAccept(update)}>Accept</Button>
                     </div>
                 </div>
             </div>
@@ -83,7 +85,7 @@ const UpdateItem = ({ update }: { update: any }) => {
     return <div className="p-3 text-sm text-muted-foreground">{update.message}</div>;
 };
 
-export default function MainView({ user, contacts, updates, calls, onStartChat, onOpenAddFriend, onOpenProfile }: MainViewProps) {
+export default function MainView({ user, contacts, updates, calls, onStartChat, onOpenAddFriend, onOpenProfile, onAcceptRequest, onRejectRequest }: MainViewProps) {
   return (
     <div className="w-full h-full flex flex-col bg-background">
       <header className="bg-header-bg text-icon-color shadow-md z-10">
@@ -111,7 +113,7 @@ export default function MainView({ user, contacts, updates, calls, onStartChat, 
                     {contacts.map(contact => <ContactItem key={contact.id} contact={contact} onStartChat={onStartChat} />)}
                 </TabsContent>
                 <TabsContent value="updates" className="p-4 space-y-4">
-                    {updates.map((update, i) => <UpdateItem key={i} update={update} />)}
+                    {updates.map((update, i) => <UpdateItem key={i} update={update} onAccept={onAcceptRequest} onReject={onRejectRequest} />)}
                 </TabsContent>
                 <TabsContent value="calls">
                     {calls.map((call, i) => <CallLogItem key={i} call={call} />)}

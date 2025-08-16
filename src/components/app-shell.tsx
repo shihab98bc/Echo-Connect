@@ -9,17 +9,21 @@ import ProfileSetupModal from '@/components/modals/profile-setup-modal';
 import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
-import { mockUser, mockContacts, mockMessages, mockUpdates, mockCalls } from '@/lib/mock-data';
+import { mockUser, mockContacts as initialContacts, mockMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useToast } from '@/hooks/use-toast';
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
 export type AppUser = typeof mockUser;
-export type Contact = (typeof mockContacts)[0];
+export type Contact = (typeof initialContacts)[0];
 export type Call = (typeof mockCalls)[0];
+export type Update = (typeof initialUpdates)[0];
+
 
 export default function AppShell() {
   const [view, setView] = useState<View>('auth');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { toast } = useToast();
 
   // State for modals
   const [isProfileSetupOpen, setProfileSetupOpen] = useState(false);
@@ -30,6 +34,10 @@ export default function AppShell() {
   // State for views
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice' } | null>(null);
+
+  // State for data
+  const [contacts, setContacts] = useState(initialContacts);
+  const [updates, setUpdates] = useState(initialUpdates);
 
   const ringtoneRef = useRef<HTMLAudioElement>(null);
 
@@ -70,6 +78,36 @@ export default function AppShell() {
     setView('call');
   };
 
+  const handleAcceptRequest = (request: Update) => {
+    if (request.type !== 'request') return;
+    // Add to contacts
+    const newContact: Contact = {
+        id: request.from.id,
+        name: request.from.name,
+        emoji: request.from.emoji,
+        lastMessage: 'Say hi!',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        unread: 0,
+    };
+    setContacts(prev => [newContact, ...prev]);
+    // Remove from updates
+    setUpdates(prev => prev.filter(u => u !== request));
+    toast({
+        title: "Friend Request Accepted",
+        description: `You are now connected with ${request.from.name}.`
+    });
+  };
+
+  const handleRejectRequest = (request: Update) => {
+    if (request.type !== 'request') return;
+     // Remove from updates
+     setUpdates(prev => prev.filter(u => u !== request));
+     toast({
+        title: "Friend Request Rejected",
+        description: `You have rejected the request from ${request.from.name}.`
+    });
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isAuthenticated && !incomingCall && mockCalls.some(c => c.status === 'incoming')) {
@@ -102,12 +140,14 @@ export default function AppShell() {
         return (
           <MainView
             user={mockUser}
-            contacts={mockContacts}
-            updates={mockUpdates}
+            contacts={contacts}
+            updates={updates}
             calls={mockCalls}
             onStartChat={handleStartChat}
             onOpenAddFriend={() => setAddFriendOpen(true)}
             onOpenProfile={() => setProfileViewOpen(true)}
+            onAcceptRequest={handleAcceptRequest}
+            onRejectRequest={handleRejectRequest}
           />
         );
       case 'chat':
@@ -178,7 +218,7 @@ export default function AppShell() {
         id="ringtone"
         ref={ringtoneRef}
         loop
-        src="data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAAAAAAAAAAAA"
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAADY="
       />
     </div>
   );
