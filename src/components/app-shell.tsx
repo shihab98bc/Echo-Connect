@@ -206,7 +206,7 @@ export default function AppShell() {
         }
     });
     unsubscribeRefs.current.push(unsubCalls);
-  }, [toast, incomingCall, activeCall, callToAnswer, handleEndCall]);
+  }, [toast, handleEndCall, activeCall?.callId, callToAnswer?.id, incomingCall?.id]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
