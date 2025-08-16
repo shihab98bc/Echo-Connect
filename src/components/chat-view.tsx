@@ -127,7 +127,7 @@ const formatMessageTimestamp = (timestamp: any) => {
 };
 
 
-const MessageBubble = ({ msg, isSent, onReply, onDelete }: { msg: Message, isSent: boolean, onReply: (msg: Message) => void, onDelete: (id: string) => void }) => {
+const MessageBubble = ({ msg, isSent, onReply, onDelete, user, contact }: { msg: Message, isSent: boolean, onReply: (msg: Message) => void, onDelete: (id: string) => void, user: AppUser, contact: Contact }) => {
     const { text, timestamp, type = 'text', duration, status, caption, replyTo, isDeleted } = msg;
 
     const MessageStatus = () => {
@@ -146,9 +146,10 @@ const MessageBubble = ({ msg, isSent, onReply, onDelete }: { msg: Message, isSen
     
     const ReplyContent = () => {
         if (!replyTo) return null;
+        const repliedToSenderName = replyTo.sender === user.uid ? 'You' : contact.name;
         return (
             <div className="p-2 mb-1 bg-black/5 rounded-t-lg border-l-2 border-primary">
-                <p className="font-bold text-primary text-sm">{replyTo.sender}</p>
+                <p className="font-bold text-primary text-sm">{repliedToSenderName}</p>
                 <p className="text-sm text-muted-foreground truncate">{replyTo.text}</p>
             </div>
         )
@@ -334,8 +335,8 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
     );
 };
 
-const ReplyPreview = ({ message, onCancel, contactName }: { message: Message, onCancel: () => void, contactName: string }) => {
-    const senderName = message.sender === 'self' ? 'You' : contactName;
+const ReplyPreview = ({ message, onCancel, contactName, currentUserId }: { message: Message, onCancel: () => void, contactName: string, currentUserId: string }) => {
+    const senderName = message.sender === currentUserId ? 'You' : contactName;
     return (
         <motion.div 
             className="p-2 border-t bg-secondary flex items-center gap-2"
@@ -472,6 +473,8 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 isSent={msg.sender === user.uid} 
                 onReply={onSetReplyToMessage}
                 onDelete={onDeleteMessage}
+                user={user}
+                contact={contact}
             />
           ))}
         </div>
@@ -479,7 +482,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       
        <AnimatePresence>
         {replyingTo && (
-            <ReplyPreview message={replyingTo} onCancel={() => onSetReplyToMessage(null)} contactName={contact.name}/>
+            <ReplyPreview message={replyingTo} onCancel={() => onSetReplyToMessage(null)} contactName={contact.name} currentUserId={user.uid}/>
         )}
        </AnimatePresence>
 
@@ -537,5 +540,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     </div>
   );
 }
+
+    
 
     
