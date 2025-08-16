@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +15,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CameraIcon, Paperclip } from 'lucide-react';
+import { CameraIcon, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { Slider } from '@/components/ui/slider';
 
 
 interface ChatViewProps {
@@ -26,7 +27,7 @@ interface ChatViewProps {
   messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
-  onSendMessage: (contactId: string, message: string, type?: 'text' | 'image') => void;
+  onSendMessage: (contactId: string, message: string, type?: Message['type'], duration?: number) => void;
   onOpenProfile: () => void;
   onToggleMute: (contactId: string) => void;
   onClearChat: (contactId: string) => void;
@@ -34,17 +35,94 @@ interface ChatViewProps {
   onOpenCamera: () => void;
 }
 
-const MessageBubble = ({ text, timestamp, isSent, type = 'text' }: { text: string; timestamp: string; isSent: boolean; type?: 'text' | 'image' }) => (
+const AudioPlayer = ({ src, duration }: { src: string, duration?: number }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+    };
+
+    const formatTime = (time: number) => {
+        const minutes = Math.floor(time / 60);
+        const seconds = Math.floor(time % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    useEffect(() => {
+        const audio = audioRef.current;
+        const updateProgress = () => {
+            if (audio) {
+                setProgress((audio.currentTime / audio.duration) * 100);
+                setCurrentTime(audio.currentTime);
+            }
+        };
+        const onEnded = () => setIsPlaying(false);
+
+        if (audio) {
+            audio.addEventListener('timeupdate', updateProgress);
+            audio.addEventListener('ended', onEnded);
+        }
+
+        return () => {
+            if (audio) {
+                audio.removeEventListener('timeupdate', updateProgress);
+                audio.removeEventListener('ended', onEnded);
+            }
+        };
+    }, []);
+
+    return (
+        <div className="flex items-center gap-2 w-full max-w-xs">
+            <audio ref={audioRef} src={src} preload="metadata" />
+            <Button variant="ghost" size="icon" onClick={togglePlay} className="h-10 w-10 shrink-0">
+                {isPlaying ? <PauseCircleIcon className="h-6 w-6" /> : <PlayCircle className="h-6 w-6" />}
+            </Button>
+            <div className="flex-grow flex flex-col gap-1">
+                <Slider
+                    value={[progress]}
+                    onValueChange={(value) => {
+                        if (audioRef.current) {
+                            audioRef.current.currentTime = (value[0] / 100) * audioRef.current.duration;
+                        }
+                    }}
+                    className="w-full h-1.5"
+                />
+                <div className="text-xs text-muted-foreground flex justify-between">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{duration ? formatTime(duration) : '0:00'}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration }: Message & { isSent: boolean }) => (
     <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
         <div className={cn(
             "relative max-w-xs lg:max-w-md px-1 py-1 rounded-lg shadow-md", 
             isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none',
-            type === 'image' && 'p-1 bg-transparent shadow-none'
+            type === 'image' && 'p-1 bg-transparent shadow-none',
+            type === 'audio' && 'p-2'
         )}>
             {type === 'image' ? (
                 <div className="relative">
                     <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
                     <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{timestamp}</p>
+                </div>
+            ) : type === 'audio' ? (
+                <div className="flex items-end gap-2">
+                    <AudioPlayer src={text} duration={duration} />
+                    <p className="text-xs text-muted-foreground self-end pb-1">{timestamp}</p>
                 </div>
             ) : (
                 <>
@@ -56,8 +134,87 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text' }: { text: strin
     </div>
 );
 
+
+const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: number) => void, onCancel: () => void }) => {
+    const [isRecording, setIsRecording] = useState(false);
+    const [duration, setDuration] = useState(0);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+
+    const startRecording = useCallback(async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = recorder;
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunksRef.current.push(e.data);
+            };
+
+            recorder.onstop = () => {
+                const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+                onSend(blob, duration);
+                chunksRef.current = [];
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            recorder.start();
+            setIsRecording(true);
+            timerRef.current = setInterval(() => {
+                setDuration(d => d + 1);
+            }, 1000);
+        } catch (error) {
+            console.error("Error starting recording:", error);
+            alert("Could not start recording. Please grant microphone permission.");
+            onCancel();
+        }
+    }, [duration, onCancel, onSend]);
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            if(timerRef.current) clearInterval(timerRef.current);
+        }
+    };
+
+    useEffect(() => {
+        startRecording();
+        return () => {
+            if(timerRef.current) clearInterval(timerRef.current);
+            if(mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.stop();
+            }
+        };
+    }, [startRecording]);
+    
+    const formatTime = (time: number) => {
+        const minutes = Math.floor(time / 60);
+        const seconds = time % 60;
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div className="flex-grow flex items-center justify-between px-4">
+            <Button variant="ghost" size="icon" className="text-destructive" onClick={onCancel}>
+                <Trash2 className="w-5 h-5" />
+            </Button>
+            <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+                <span>{formatTime(duration)}</span>
+            </div>
+            <Button size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={stopRecording}>
+                <SendIcon className="h-6 w-6 text-white" />
+            </Button>
+        </div>
+    );
+};
+
+
 export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute, onClearChat, onBlockContact, onOpenCamera }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -105,6 +262,16 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     if(e.target) {
         e.target.value = '';
     }
+  };
+  
+  const handleSendVoiceMessage = (blob: Blob, duration: number) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        onSendMessage(contact.id, dataUrl, 'audio', duration);
+    };
+    reader.readAsDataURL(blob);
+    setIsRecording(false);
   };
 
 
@@ -158,51 +325,57 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((msg, index) => (
-            <MessageBubble key={index} text={msg.text} timestamp={msg.timestamp} isSent={msg.sender === user.uid} type={msg.type} />
+            <MessageBubble key={index} {...msg} isSent={msg.sender === user.uid} />
           ))}
         </div>
       </ScrollArea>
       
       <div id="chat-input-container" className="p-2 bg-secondary border-t flex items-center gap-2">
-        <div className="flex-grow relative">
-            <Input 
-                id="chat-input"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend(e)}
-                placeholder="Type a message..." 
-                className="flex-grow rounded-full bg-white pr-24"
-                autoComplete="off"
-            />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
-                    <Paperclip className="h-5 w-5" />
-                </Button>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
-                    <CameraIcon className="h-5 w-5" />
-                </Button>
-            </div>
-        </div>
-        <AnimatePresence mode="wait">
-            <motion.div
-                key={newMessage ? 'send' : 'mic'}
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.7 }}
-                transition={{ duration: 0.2 }}
-            >
-                {newMessage ? (
-                    <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={handleSend}>
-                        <SendIcon className="h-6 w-6 text-white" />
-                    </Button>
-                ) : (
-                    <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => handleFeatureNotImplemented('Voice message')}>
-                        <MicIcon className="h-6 w-6 text-white" />
-                    </Button>
-                )}
-            </motion.div>
-        </AnimatePresence>
+        {isRecording ? (
+            <VoiceRecorder onSend={handleSendVoiceMessage} onCancel={() => setIsRecording(false)} />
+        ) : (
+            <>
+                <div className="flex-grow relative">
+                    <Input 
+                        id="chat-input"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSend(e)}
+                        placeholder="Type a message..." 
+                        className="flex-grow rounded-full bg-white pr-24"
+                        autoComplete="off"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
+                            <Paperclip className="h-5 w-5" />
+                        </Button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
+                            <CameraIcon className="h-5 w-5" />
+                        </Button>
+                    </div>
+                </div>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={newMessage ? 'send' : 'mic'}
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.7 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {newMessage ? (
+                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={handleSend}>
+                                <SendIcon className="h-6 w-6 text-white" />
+                            </Button>
+                        ) : (
+                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => setIsRecording(true)}>
+                                <MicIcon className="h-6 w-6 text-white" />
+                            </Button>
+                        )}
+                    </motion.div>
+                </AnimatePresence>
+            </>
+        )}
       </div>
     </div>
   );

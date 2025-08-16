@@ -20,7 +20,7 @@ export type AppUser = typeof mockUser;
 export type Contact = (typeof initialContacts)[0];
 export type Call = (typeof mockCalls)[0];
 export type Update = (typeof initialUpdates)[0];
-export type Message = { sender: string; text: string; timestamp: string, type?: 'text' | 'image' };
+export type Message = { sender: string; text: string; timestamp: string, type?: 'text' | 'image' | 'audio', duration?: number };
 
 
 export default function AppShell() {
@@ -99,13 +99,16 @@ export default function AppShell() {
     setView(activeChat ? 'chat' : 'main');
   };
 
-  const handleSendMessage = (contactId: string, messageText: string, type: 'text' | 'image' = 'text') => {
+  const handleSendMessage = (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
     const message: Message = {
       sender: user.uid,
       text: messageText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       type: type,
     };
+    if (duration) {
+      message.duration = duration;
+    }
 
     setMessages(prev => {
         const newMessages = { ...prev };
@@ -115,10 +118,15 @@ export default function AppShell() {
         newMessages[contactId] = [...newMessages[contactId], message];
         return newMessages;
     });
+    
+    let lastMessageText = message.text;
+    if (type === 'image') lastMessageText = '📷 Photo';
+    if (type === 'audio') lastMessageText = '🎤 Voice message';
+
 
     setContacts(prev => prev.map(c => 
         c.id === contactId 
-        ? { ...c, lastMessage: type === 'image' ? '📷 Photo' : message.text, timestamp: message.timestamp, unread: 0 }
+        ? { ...c, lastMessage: lastMessageText, timestamp: message.timestamp, unread: 0 }
         : c
     ).sort((a,b) => a.id === contactId ? -1 : b.id === contactId ? 1 : 0));
   };

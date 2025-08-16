@@ -48,7 +48,7 @@ export const mockContacts = [
     { id: 'user7', name: 'Dr. Evelyn Reed', emoji: '🔬', lastMessage: 'Say hi!', timestamp: '05:27 PM', unread: 0, isMuted: false },
 ];
 
-export const mockMessages: Record<string, { sender: string; text: string; timestamp: string, type?: 'text' | 'image' }[]> = {
+export const mockMessages: Record<string, { sender: string; text: string; timestamp: string, type?: 'text' | 'image' | 'audio', duration?: number }[]> = {
     user2: [
         { sender: 'user2', text: 'Hey Alex, how are you?', timestamp: '10:40 AM', type: 'text' },
         { sender: 'user1', text: 'I\'m good, Zoe! Just working on the new design. How about you?', timestamp: '10:42 AM', type: 'text' },
