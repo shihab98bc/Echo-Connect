@@ -5,7 +5,7 @@ import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon } from '@/components/icons';
+import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon, MicIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DropdownMenu,
@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
+import { AnimatePresence, motion } from 'framer-motion';
+import { CameraIcon, Paperclip } from 'lucide-react';
 
 interface ChatViewProps {
   user: AppUser;
@@ -112,20 +114,44 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         </div>
       </ScrollArea>
       
-      <div id="chat-input-container" className="p-2 bg-secondary border-t">
-        <form onSubmit={handleSend} className="flex items-center gap-2">
-          <Input 
-            id="chat-input"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..." 
-            className="flex-grow rounded-full bg-white"
-            autoComplete="off"
-          />
-          <Button type="submit" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12">
-            <SendIcon className="h-6 w-6 text-white" />
-          </Button>
-        </form>
+      <div id="chat-input-container" className="p-2 bg-secondary border-t flex items-center gap-2">
+        <div className="flex-grow relative">
+            <Input 
+                id="chat-input"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message..." 
+                className="flex-grow rounded-full bg-white pr-24"
+                autoComplete="off"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => handleFeatureNotImplemented('Attach file')}>
+                    <Paperclip className="h-5 w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => handleFeatureNotImplemented('Take photo')}>
+                    <CameraIcon className="h-5 w-5" />
+                </Button>
+            </div>
+        </div>
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={newMessage ? 'send' : 'mic'}
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.7 }}
+                transition={{ duration: 0.2 }}
+            >
+                {newMessage ? (
+                    <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={handleSend}>
+                        <SendIcon className="h-6 w-6 text-white" />
+                    </Button>
+                ) : (
+                    <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => handleFeatureNotImplemented('Voice message')}>
+                        <MicIcon className="h-6 w-6 text-white" />
+                    </Button>
+                )}
+            </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
