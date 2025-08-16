@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { ArrowDownLeftIcon, ArrowUpRightIcon, Trash2Icon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Timestamp } from 'firebase/firestore';
 
 
 interface MainViewProps {
@@ -31,6 +32,31 @@ interface MainViewProps {
   onExitSelectionMode: () => void;
   onDeleteSelectedChats: () => void;
 }
+
+const formatContactTimestamp = (timestamp: any) => {
+  if (!timestamp) return '';
+  let date: Date;
+  if (timestamp instanceof Timestamp) {
+    date = timestamp.toDate();
+  } else if (timestamp.seconds) {
+     date = new Date(timestamp.seconds * 1000);
+  }
+   else {
+    return ''; // Or some default
+  }
+
+  const now = new Date();
+  const isToday = date.getDate() === now.getDate() &&
+                  date.getMonth() === now.getMonth() &&
+                  date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+};
+
 
 const ListItem = ({ children, className, ...props }: { children: React.ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>) => (
     <div className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)} {...props}>{children}</div>
@@ -87,7 +113,7 @@ const ContactItem = ({ contact, onStartChat, isSelectionMode, isSelected, onTogg
                 </div>
             </div>
             <div className="text-right flex flex-col items-end gap-1 ml-2 flex-shrink-0">
-                <p className="text-xs text-accent">{contact.timestamp}</p>
+                <p className="text-xs text-accent">{formatContactTimestamp(contact.timestamp)}</p>
                 <div className="h-6 flex items-center justify-center">
                 {contact.unread > 0 ? (
                     <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center rounded-full text-sm">{contact.unread}</Badge>
@@ -101,7 +127,7 @@ const ContactItem = ({ contact, onStartChat, isSelectionMode, isSelected, onTogg
 };
 
 const CallLogItem = ({ call, onStartCall }: { call: Call; onStartCall: (contact: Contact, type: 'video' | 'voice') => void; }) => {
-    const isGroupCall = 'isGroup' in call.contact && call.contact.isGroup;
+    const isGroupCall = 'isGroup' in call.contact && (call.contact as any).isGroup;
     return (
         <ListItem>
             <div className="flex items-center gap-4 flex-grow">
@@ -147,7 +173,7 @@ const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: 
             </div>
         );
     }
-    return <div className="p-3 text-sm text-muted-foreground">{update.message}</div>;
+    return null;
 };
 
 export default function MainView({ 

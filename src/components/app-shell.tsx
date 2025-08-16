@@ -11,33 +11,67 @@ import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
 import SecurityModal from '@/components/modals/security-modal';
 import CameraModal from '@/components/modals/camera-modal';
-import { mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls, mockUser } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
+import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
+import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp } from 'firebase/firestore';
+
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
+
 export type AppUser = {
   uid: string;
-  name: string | null;
+  name: string;
   emoji: string;
-  id: string | null;
+  email: string | null;
   photoURL: string | null;
-  blocked: Record<string, boolean>;
+  blocked?: Record<string, boolean>;
 };
-export type Contact = (typeof initialContacts)[0];
-export type Call = (typeof mockCalls)[0];
-export type Update = (typeof initialUpdates)[0];
-export type Message = { sender: string; text: string; timestamp: string, type?: 'text' | 'image' | 'audio', duration?: number };
 
+export type Contact = {
+  id: string; // This is the other user's UID
+  name: string;
+  emoji: string;
+  photoURL?: string | null;
+  lastMessage?: string;
+  timestamp?: any;
+  unread: number;
+  isMuted: boolean;
+};
+
+export type Message = { 
+  id: string;
+  sender: string; 
+  text: string; 
+  timestamp: any;
+  type?: 'text' | 'image' | 'audio';
+  duration?: number 
+};
+
+export type Call = { 
+  id: string;
+  contact: Contact; 
+  type: 'video' | 'voice';
+  status: 'incoming' | 'outgoing' | 'missed';
+  time: string;
+};
+
+export type Update = {
+  id: string; // The user ID of the person sending the request
+  type: 'request';
+  from: {
+    id: string;
+    name: string;
+    emoji: string;
+  };
+};
 
 export default function AppShell() {
   const [view, setView] = useState<View>('auth');
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const { toast } = useToast();
 
-  // State for modals
   const [isProfileSetupOpen, setProfileSetupOpen] = useState(false);
   const [isAddFriendOpen, setAddFriendOpen] = useState(false);
   const [isProfileViewOpen, setProfileViewOpen] = useState(false);
@@ -45,62 +79,267 @@ export default function AppShell() {
   const [isCameraOpen, setCameraOpen] = useState(false);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
 
-  // State for views
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice' } | null>(null);
 
-  // State for data
-  const [contacts, setContacts] = useState(initialContacts);
-  const [updates, setUpdates] = useState(initialUpdates);
-  const [messages, setMessages] = useState(initialMessages);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [updates, setUpdates] = useState<Update[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
 
-  // State for chat selection
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedChats, setSelectedChats] = useState<string[]>([]);
+  
+  // Firestore listeners unsubscribe functions
+  const unsubscribeRefs = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
-            const isNewUser = !firebaseUser.displayName;
-            const appUser: AppUser = {
-                uid: firebaseUser.uid,
-                name: firebaseUser.displayName,
-                emoji: '😎', // Default emoji, can be changed in profile setup
-                id: firebaseUser.email,
-                photoURL: firebaseUser.photoURL,
-                blocked: {}, // Load from DB in a real app
-            };
-            setCurrentUser(appUser);
-            
-            if (isNewUser) {
-                setProfileSetupOpen(true);
-            } else {
-                setContacts(initialContacts);
-                setMessages(initialMessages);
-                setUpdates(initialUpdates);
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as AppUser;
+                setCurrentUser(userData);
                 setView('main');
+                setupFirestoreListeners(userData.uid);
+            } else {
+                setProfileSetupOpen(true);
             }
         } else {
             setCurrentUser(null);
             setView('auth');
+            // Cleanup listeners
+            unsubscribeRefs.current.forEach(unsub => unsub());
+            unsubscribeRefs.current = [];
             setContacts([]);
             setMessages({});
             setUpdates([]);
         }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      unsubscribeRefs.current.forEach(unsub => unsub());
+    };
   }, []);
 
+  const setupFirestoreListeners = (uid: string) => {
+    // Clean up previous listeners
+    unsubscribeRefs.current.forEach(unsub => unsub());
+    unsubscribeRefs.current = [];
 
-  const handleLogin = () => {
-    // onAuthStateChanged will handle the view change
+    // Listener for contacts
+    const contactsRef = collection(db, 'users', uid, 'contacts');
+    const contactsQuery = query(contactsRef, orderBy('timestamp', 'desc'));
+    const unsubContacts = onSnapshot(contactsQuery, (snapshot) => {
+        const contactsData = snapshot.docs.map(doc => doc.data() as Contact);
+        setContacts(contactsData);
+
+        // For each contact, listen to messages
+        contactsData.forEach(contact => {
+          const chatId = [uid, contact.id].sort().join('_');
+          const messagesRef = collection(db, 'chats', chatId, 'messages');
+          const messagesQuery = query(messagesRef, orderBy('timestamp', 'asc'));
+
+          const unsubMessages = onSnapshot(messagesQuery, (msgSnapshot) => {
+            const newMessages = msgSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Message));
+            setMessages(prev => ({ ...prev, [contact.id]: newMessages }));
+          });
+          unsubscribeRefs.current.push(unsubMessages);
+        });
+    });
+    unsubscribeRefs.current.push(unsubContacts);
+    
+    // Listener for friend requests
+    const requestsRef = collection(db, 'users', uid, 'friendRequests');
+    const unsubRequests = onSnapshot(requestsRef, (snapshot) => {
+        const requestsData = snapshot.docs.map(doc => doc.data() as Update);
+        setUpdates(requestsData);
+    });
+    unsubscribeRefs.current.push(unsubRequests);
   };
 
-  const handleSignup = () => {
-    // onAuthStateChanged will handle the view change and open profile setup
+
+  const handleProfileSave = async (name: string, emoji: string) => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    
+    try {
+        await updateProfile(firebaseUser, { displayName: name });
+        const userPayload: AppUser = {
+            uid: firebaseUser.uid,
+            name,
+            emoji,
+            email: firebaseUser.email,
+            photoURL: firebaseUser.photoURL,
+        };
+        await setDoc(doc(db, 'users', firebaseUser.uid), userPayload);
+        
+        setCurrentUser(userPayload);
+        setProfileSetupOpen(false);
+        setView('main');
+        setupFirestoreListeners(firebaseUser.uid);
+        toast({ title: `Welcome, ${name}!`, description: "Your profile is set up." });
+    } catch (error) {
+        console.error("Error saving profile:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not save your profile.' });
+    }
   };
 
+  const handleStartChat = (contact: Contact) => {
+    // Mark messages as read (optional, can be implemented)
+    setActiveChat(contact);
+    setView('chat');
+  };
+
+  const handleSendMessage = async (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
+    if (!currentUser) return;
+    
+    const chatId = [currentUser.uid, contactId].sort().join('_');
+    const messagesRef = collection(db, 'chats', chatId, 'messages');
+    
+    const message: Omit<Message, 'id'> = {
+      sender: currentUser.uid,
+      text: messageText,
+      timestamp: serverTimestamp(),
+      type: type,
+    };
+    if (duration) message.duration = duration;
+
+    let lastMessageText = message.text;
+    if (type === 'image') lastMessageText = '📷 Photo';
+    if (type === 'audio') lastMessageText = '🎤 Voice message';
+
+    try {
+        const newDocRef = doc(collection(db, 'chats', chatId, 'messages'));
+        await setDoc(newDocRef, message);
+        
+        const timestamp = new Date();
+        // Update contact docs for both users
+        const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+        await updateDoc(userContactRef, { lastMessage: lastMessageText, timestamp });
+
+        const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
+        await updateDoc(otherUserContactRef, { lastMessage: lastMessageText, timestamp });
+
+    } catch (error) {
+        console.error("Error sending message:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
+    }
+  };
+
+  const handleAddFriend = async (friendEmail: string) => {
+    if (!currentUser || friendEmail === currentUser.email) {
+      toast({ variant: 'destructive', title: 'Error', description: "You cannot add yourself." });
+      return;
+    }
+    
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where("email", "==", friendEmail), limit(1));
+
+    try {
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) {
+            toast({ variant: 'destructive', title: 'User Not Found', description: "No user with that email exists." });
+            return;
+        }
+
+        const friendDoc = querySnapshot.docs[0];
+        const friendData = friendDoc.data() as AppUser;
+
+        // Check if already a contact
+        const contactDoc = await getDoc(doc(db, 'users', currentUser.uid, 'contacts', friendData.uid));
+        if (contactDoc.exists()) {
+             toast({ variant: 'destructive', title: 'Already Friends', description: `You are already connected with ${friendData.name}.` });
+             return;
+        }
+        
+        // Send friend request
+        const requestRef = doc(db, 'users', friendData.uid, 'friendRequests', currentUser.uid);
+        await setDoc(requestRef, {
+            id: currentUser.uid,
+            type: 'request',
+            from: {
+                id: currentUser.uid,
+                name: currentUser.name,
+                emoji: currentUser.emoji,
+            }
+        });
+        
+        toast({
+            title: "Friend Request Sent",
+            description: `Your request to ${friendData.name} has been sent.`,
+        });
+        setAddFriendOpen(false);
+
+    } catch (error) {
+        console.error("Error adding friend:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not send friend request.' });
+    }
+  };
+
+  const handleAcceptRequest = async (request: Update) => {
+    if (!currentUser) return;
+    
+    const batch = writeBatch(db);
+    const requestFromUser = request.from;
+
+    // 1. Add contact to current user's contacts
+    const currentUserContactRef = doc(db, 'users', currentUser.uid, 'contacts', requestFromUser.id);
+    batch.set(currentUserContactRef, {
+        id: requestFromUser.id,
+        name: requestFromUser.name,
+        emoji: requestFromUser.emoji,
+        lastMessage: 'Say hi!',
+        timestamp: serverTimestamp(),
+        unread: 0,
+        isMuted: false,
+    });
+
+    // 2. Add current user to the other user's contacts
+    const otherUserContactRef = doc(db, 'users', requestFromUser.id, 'contacts', currentUser.uid);
+    batch.set(otherUserContactRef, {
+        id: currentUser.uid,
+        name: currentUser.name,
+        emoji: currentUser.emoji,
+        lastMessage: 'Say hi!',
+        timestamp: serverTimestamp(),
+        unread: 0,
+        isMuted: false,
+    });
+    
+    // 3. Delete the friend request
+    const requestRef = doc(db, 'users', currentUser.uid, 'friendRequests', requestFromUser.id);
+    batch.delete(requestRef);
+
+    try {
+        await batch.commit();
+        toast({
+            title: "Friend Request Accepted",
+            description: `You are now connected with ${requestFromUser.name}.`
+        });
+    } catch(error) {
+        console.error("Error accepting request:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not accept friend request.' });
+    }
+  };
+  
+  const handleRejectRequest = async (request: Update) => {
+    if (!currentUser) return;
+    try {
+        const requestRef = doc(db, 'users', currentUser.uid, 'friendRequests', request.from.id);
+        await updateDoc(requestRef, { acknowledged: true }); // Or simply delete it
+        toast({
+            title: "Friend Request Rejected",
+            description: `You have rejected the request from ${request.from.name}.`
+        });
+    } catch(error) {
+         console.error("Error rejecting request:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not reject friend request.' });
+    }
+  };
+  
   const handleLogout = async () => {
     try {
         await signOut(auth);
@@ -116,46 +355,6 @@ export default function AppShell() {
     }
   };
 
-  const handleProfileSave = (name: string, emoji: string) => {
-    if (currentUser) {
-        const welcomeBotId = 'welcome-bot';
-        const welcomeMessage = {
-            sender: welcomeBotId,
-            text: `Welcome to EchoConnect, ${name}! To get started, tap the icon in the top right to add a friend.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'text' as const
-        };
-        const welcomeContact: Contact = {
-            id: welcomeBotId,
-            name: 'Welcome to EchoConnect',
-            emoji: '👋',
-            lastMessage: welcomeMessage.text,
-            timestamp: welcomeMessage.timestamp,
-            unread: 1,
-            isMuted: false,
-        };
-
-        setContacts([welcomeContact]);
-        setMessages({ [welcomeBotId]: [welcomeMessage]});
-        setUpdates(initialUpdates);
-
-        // In a real app, update the user profile in Firebase Auth and your database
-        setCurrentUser(prev => prev ? ({...prev, name, emoji}) : null);
-        setProfileSetupOpen(false);
-        setView('main');
-    }
-  };
-
-  const handleStartChat = (contact: Contact) => {
-    setContacts(prev => prev.map(c => 
-        c.id === contact.id 
-        ? { ...c, unread: 0 }
-        : c
-    ));
-    setActiveChat(contact);
-    setView('chat');
-  };
-
   const handleStartCall = (contact: Contact, type: 'video' | 'voice') => {
     setActiveCall({ contact, type });
     setView('call');
@@ -166,148 +365,25 @@ export default function AppShell() {
     setView(activeChat ? 'chat' : 'main');
   };
 
-  const handleSendMessage = (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
-    if (!currentUser) return;
-    const message: Message = {
-      sender: currentUser.uid,
-      text: messageText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: type,
-    };
-    if (duration) {
-      message.duration = duration;
-    }
-
-    setMessages(prev => {
-        const newMessages = { ...prev };
-        if (!newMessages[contactId]) {
-            newMessages[contactId] = [];
-        }
-        newMessages[contactId] = [...newMessages[contactId], message];
-        return newMessages;
-    });
-    
-    let lastMessageText = message.text;
-    if (type === 'image') lastMessageText = '📷 Photo';
-    if (type === 'audio') lastMessageText = '🎤 Voice message';
-
-
-    setContacts(prev => prev.map(c => 
-        c.id === contactId 
-        ? { ...c, lastMessage: lastMessageText, timestamp: message.timestamp, unread: 0 }
-        : c
-    ).sort((a,b) => a.id === contactId ? -1 : b.id === contactId ? 1 : 0));
-  };
-
   const handleToggleMute = (contactId: string) => {
-    let contactName = '';
-    let isMuted: boolean | undefined = false;
-    
-    setContacts(prev => prev.map(c => {
-        if (c.id === contactId) {
-            contactName = c.name;
-            isMuted = !c.isMuted;
-            return { ...c, isMuted: !c.isMuted };
-        }
-        return c;
-    }));
-
+    // This would update the contact in Firestore in a real app
     toast({
-        title: isMuted ? "Notifications Muted" : "Notifications Unmuted",
-        description: `You will no longer receive notifications from ${contactName}.`,
+        title: "Feature coming soon",
+        description: `Muting notifications will be available in a future update.`,
     });
   };
 
   const handleClearChat = (contactId: string) => {
-    const contactName = contacts.find(c => c.id === contactId)?.name || 'this contact';
-
-    setMessages(prev => {
-        const newMessages = { ...prev };
-        if (newMessages[contactId]) {
-            newMessages[contactId] = [];
-        }
-        return newMessages;
-    });
-
-    setContacts(prev => prev.map(c => 
-        c.id === contactId 
-        ? { ...c, lastMessage: 'Chat cleared', timestamp: '' } 
-        : c
-    ));
-    
     toast({
-        title: "Chat Cleared",
-        description: `Your chat history with ${contactName} has been cleared.`,
+        title: "Feature coming soon",
+        description: `Clearing chat history will be available in a future update.`,
     });
   };
 
   const handleBlockContact = (contactId: string) => {
-    const contact = contacts.find(c => c.id === contactId);
-    if (!contact || !currentUser) return;
-
-    setCurrentUser(prevUser => prevUser ? ({
-        ...prevUser,
-        blocked: { ...prevUser.blocked, [contactId]: true }
-    }) : null);
-    
-    setActiveChat(null);
-    setView('main');
-
     toast({
-        title: 'Contact Blocked',
-        description: `You have blocked ${contact.name}.`,
-    });
-  };
-  
-  const handleAddFriend = (friendId: string) => {
-    if (!currentUser) return;
-    // For demonstration, we'll create a new mock request in the updates list.
-    // In a real app, this would send a request to a server.
-    const newRequest: Update = {
-      id: `req_${Date.now()}`,
-      type: 'request',
-      from: {
-        id: friendId, // In a real app, you'd fetch this user's data
-        name: friendId,
-        emoji: '👋',
-      },
-    };
-
-    setUpdates(prev => [newRequest, ...prev]);
-    
-    toast({
-        title: "Friend Request Sent",
-        description: `Your request to ${friendId} has been sent. A sample request has been added to your Updates tab for you to try.`,
-    });
-    setAddFriendOpen(false);
-  };
-
-
-  const handleAcceptRequest = (request: Update) => {
-    if (request.type !== 'request') return;
-    const newContact: Contact = {
-        id: request.from.id,
-        name: request.from.name,
-        emoji: request.from.emoji,
-        lastMessage: 'Say hi!',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        unread: 0,
-        isMuted: false,
-    };
-    setContacts(prev => [newContact, ...prev]);
-    setUpdates(prev => prev.filter(u => u.id !== request.id));
-    toast({
-        title: "Friend Request Accepted",
-        description: `You are now connected with ${request.from.name}.`
-    });
-  };
-
-  const handleRejectRequest = (request: Update) => {
-    if (request.type !== 'request') return;
-     setUpdates(prev => prev.filter(u => u.id !== request.id));
-     toast({
-        title: "Friend Request Rejected",
-        description: `You have rejected the request from ${request.from.name}.`
+        title: "Feature coming soon",
+        description: `Blocking contacts will be available in a future update.`,
     });
   };
 
@@ -330,16 +406,9 @@ export default function AppShell() {
   };
 
   const handleDeleteSelectedChats = () => {
-    setContacts(prev => prev.filter(c => !selectedChats.includes(c.id)));
-    setMessages(prev => {
-        const newMessages = { ...prev };
-        selectedChats.forEach(id => {
-            delete newMessages[id];
-        });
-        return newMessages;
-    });
     toast({
-        title: `${selectedChats.length} chat(s) deleted.`,
+        title: "Feature coming soon",
+        description: `Deleting chats will be available in a future update.`,
     });
     handleExitSelectionMode();
   };
@@ -358,27 +427,31 @@ export default function AppShell() {
     exit: { opacity: 0, x: -30 },
   };
 
-  if (!currentUser) {
+  if (view === 'auth') {
       return (
         <div id="app-container" className="w-full max-w-[450px] h-[95vh] max-h-[950px] bg-background shadow-wa rounded-lg overflow-hidden flex flex-col relative transition-all duration-300">
-            <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />
+            <AuthView onLogin={() => {}} onSignup={() => {}} onGoogleSignIn={() => {}} />
         </div>
       );
   }
-
-  const visibleContacts = contacts.filter(c => !currentUser.blocked[c.id]);
+  
+  if (!currentUser) {
+      return (
+         <div id="app-container" className="w-full max-w-[450px] h-[95vh] max-h-[950px] bg-background shadow-wa rounded-lg overflow-hidden flex flex-col relative transition-all duration-300 items-center justify-center">
+            <p>Loading...</p>
+         </div>
+      )
+  }
 
   const renderView = () => {
     switch (view) {
-      case 'auth':
-        return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />;
       case 'main':
         return (
           <MainView
             user={currentUser}
-            contacts={visibleContacts}
+            contacts={contacts}
             updates={updates}
-            calls={mockCalls}
+            calls={[]} // Mock calls for now
             onStartChat={handleStartChat}
             onOpenAddFriend={() => setAddFriendOpen(true)}
             onOpenProfile={() => setProfileViewOpen(true)}
@@ -424,7 +497,7 @@ export default function AppShell() {
           />
         );
       default:
-        return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />;
+        return <p>Loading...</p>;
     }
   };
 
@@ -450,16 +523,18 @@ export default function AppShell() {
         onClose={() => setAddFriendOpen(false)} 
         onAddFriend={handleAddFriend}
       />
-      <ProfileViewModal 
-        isOpen={isProfileViewOpen} 
-        onClose={() => setProfileViewOpen(false)} 
-        user={currentUser} 
-        onLogout={handleLogout} 
-        onOpenSecurity={() => {
-          setProfileViewOpen(false);
-          setSecurityModalOpen(true);
-        }}
-      />
+      {currentUser && (
+        <ProfileViewModal 
+          isOpen={isProfileViewOpen} 
+          onClose={() => setProfileViewOpen(false)} 
+          user={currentUser} 
+          onLogout={handleLogout} 
+          onOpenSecurity={() => {
+            setProfileViewOpen(false);
+            setSecurityModalOpen(true);
+          }}
+        />
+      )}
       <SecurityModal isOpen={isSecurityModalOpen} onClose={() => setSecurityModalOpen(false)} />
       <CameraModal 
         isOpen={isCameraOpen} 

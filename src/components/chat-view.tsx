@@ -19,6 +19,7 @@ import { CameraIcon, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'luci
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
+import { Timestamp } from 'firebase/firestore';
 
 
 interface ChatViewProps {
@@ -105,6 +106,20 @@ const AudioPlayer = ({ src, duration }: { src: string, duration?: number }) => {
     );
 };
 
+const formatMessageTimestamp = (timestamp: any) => {
+  if (!timestamp) return '';
+  let date: Date;
+  if (timestamp instanceof Timestamp) {
+    date = timestamp.toDate();
+  } else if (timestamp.seconds) {
+     date = new Date(timestamp.seconds * 1000);
+  }
+  else {
+    return ''; // Should not happen with firestore
+  }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
 
 const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration }: Message & { isSent: boolean }) => (
     <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
@@ -117,17 +132,17 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration }: Mes
             {type === 'image' ? (
                 <div className="relative">
                     <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
-                    <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{timestamp}</p>
+                    <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{formatMessageTimestamp(timestamp)}</p>
                 </div>
             ) : type === 'audio' ? (
                 <div className="flex items-end gap-2">
                     <AudioPlayer src={text} duration={duration} />
-                    <p className="text-xs text-muted-foreground self-end pb-1">{timestamp}</p>
+                    <p className="text-xs text-muted-foreground self-end pb-1">{formatMessageTimestamp(timestamp)}</p>
                 </div>
             ) : (
                 <>
                     <p className="text-sm text-foreground px-2 py-1">{text}</p>
-                    <p className="text-xs text-muted-foreground text-right mt-1 px-2">{timestamp}</p>
+                    <p className="text-xs text-muted-foreground text-right mt-1 px-2">{formatMessageTimestamp(timestamp)}</p>
                 </>
             )}
         </div>
@@ -168,11 +183,8 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
             recorder.start();
             setIsRecording(true);
             timerRef.current = setInterval(() => {
-                setDuration(d => {
-                    const newDuration = d + 1;
-                    durationRef.current = newDuration;
-                    return newDuration;
-                });
+                durationRef.current += 1;
+                setDuration(durationRef.current);
             }, 1000);
         } catch (error) {
             console.error("Error starting recording:", error);
@@ -339,8 +351,8 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
 
       <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
-          {messages.map((msg, index) => (
-            <MessageBubble key={index} {...msg} isSent={msg.sender === user.uid} />
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} {...msg} isSent={msg.sender === user.uid} />
           ))}
         </div>
       </ScrollArea>

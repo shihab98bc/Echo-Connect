@@ -50,8 +50,8 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOp
   };
   
   const handleCopyId = () => {
-    if (user.id) {
-        navigator.clipboard.writeText(user.id);
+    if (user.email) {
+        navigator.clipboard.writeText(user.email);
         toast({
             title: "ID Copied!",
             description: "Your EchoConnect ID has been copied to the clipboard.",
@@ -71,7 +71,7 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOp
             <div>
               <DialogTitle className="font-headline text-3xl">{user.name}</DialogTitle>
               <DialogDescription className="text-base flex items-center gap-2">
-                <span>{user.id}</span>
+                <span>{user.email}</span>
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyId}>
                     <Copy className="h-4 w-4" />
                 </Button>
