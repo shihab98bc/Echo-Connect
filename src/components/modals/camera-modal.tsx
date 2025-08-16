@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Flashlight, FlashlightOff, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
@@ -162,11 +162,11 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
+          <DialogTitle className="sr-only">Camera</DialogTitle>
           <div className="p-4 absolute top-0 left-0 z-10 w-full flex justify-between items-center">
              <Button variant="ghost" size="icon" onClick={handleClose} className="bg-black/50 hover:bg-black/70 rounded-full">
                  <X className="w-6 h-6" />
              </Button>
-             <h2 id="camera-title" className="sr-only">Camera</h2>
           </div>
 
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
