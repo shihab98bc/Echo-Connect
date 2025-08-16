@@ -828,7 +828,7 @@ export default function AppShell() {
             onToggleChatSelection={handleToggleChatSelection}
             onEnterSelectionMode={handleEnterSelectionMode}
             onExitSelectionMode={handleExitSelectionMode}
-            onDeleteSelectedChats={handleDeleteDeleteSelectedChats}
+            onDeleteSelectedChats={handleDeleteSelectedChats}
             updatesViewed={updatesViewed}
             onViewUpdates={() => setUpdatesViewed(true)}
           />
@@ -928,11 +928,3 @@ export default function AppShell() {
     </div>
   );
 }
-
-    
-
-    
-
-    
-
-    
