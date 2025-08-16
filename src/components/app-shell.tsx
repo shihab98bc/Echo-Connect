@@ -318,11 +318,17 @@ export default function AppShell() {
 
     const chatId = [currentUser.uid, contact.id].sort().join('_');
     const messagesRef = collection(db, 'chats', chatId, 'messages');
-    const q = query(messagesRef, where('sender', '==', contact.id), where('status', '!=', 'seen'));
-    const unseenMessages = await getDocs(q);
+    
+    // This is the updated part. Instead of a complex query,
+    // we get all messages and filter on the client.
+    const messagesSnapshot = await getDocs(messagesRef);
     const batch = writeBatch(db);
-    unseenMessages.forEach(doc => {
-        batch.update(doc.ref, { status: 'seen' });
+    messagesSnapshot.forEach(docSnap => {
+        const msg = docSnap.data() as Message;
+        // Check if the message is from the other user and not yet seen
+        if (msg.sender === contact.id && msg.status !== 'seen') {
+            batch.update(docSnap.ref, { status: 'seen' });
+        }
     });
     await batch.commit();
 
