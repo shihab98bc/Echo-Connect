@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AuthView from '@/components/auth-view';
 import MainView from '@/components/main-view';
 import ChatView from '@/components/chat-view';
@@ -88,7 +88,6 @@ export default function AppShell() {
         return newMessages;
     });
 
-    // Also update the last message for the contact in the contact list
     setContacts(prev => prev.map(c => 
         c.id === contactId 
         ? { ...c, lastMessage: message.text, timestamp: message.timestamp }
@@ -99,7 +98,6 @@ export default function AppShell() {
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
-    // Add to contacts
     const newContact: Contact = {
         id: request.from.id,
         name: request.from.name,
@@ -109,7 +107,6 @@ export default function AppShell() {
         unread: 0,
     };
     setContacts(prev => [newContact, ...prev]);
-    // Remove from updates
     setUpdates(prev => prev.filter(u => u !== request));
     toast({
         title: "Friend Request Accepted",
@@ -119,7 +116,6 @@ export default function AppShell() {
 
   const handleRejectRequest = (request: Update) => {
     if (request.type !== 'request') return;
-     // Remove from updates
      setUpdates(prev => prev.filter(u => u !== request));
      toast({
         title: "Friend Request Rejected",
@@ -129,12 +125,15 @@ export default function AppShell() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (isAuthenticated && !incomingCall && mockCalls.some(c => c.status === 'incoming')) {
-        setIncomingCall(mockCalls.find(c => c.status === 'incoming')!);
+      if (isAuthenticated && !incomingCall && !activeCall) {
+        const nextCall = mockCalls.find(c => c.status === 'incoming');
+        if (nextCall) {
+            setIncomingCall(nextCall);
+        }
       }
     }, 10000);
     return () => clearTimeout(timer);
-  }, [isAuthenticated, incomingCall]);
+  }, [isAuthenticated, incomingCall, activeCall]);
 
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
@@ -158,6 +157,7 @@ export default function AppShell() {
             onOpenProfile={() => setProfileViewOpen(true)}
             onAcceptRequest={handleAcceptRequest}
             onRejectRequest={handleRejectRequest}
+            onStartCall={handleStartCall}
           />
         );
       case 'chat':

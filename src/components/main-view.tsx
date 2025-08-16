@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddFriendIcon, MenuIcon, VideoCallIcon, VoiceCallIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface MainViewProps {
   user: AppUser;
@@ -18,10 +19,11 @@ interface MainViewProps {
   onOpenProfile: () => void;
   onAcceptRequest: (request: Update) => void;
   onRejectRequest: (request: Update) => void;
+  onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
 }
 
-const ListItem = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer">{children}</div>
+const ListItem = ({ children, className }: { children: React.ReactNode, className?: string }) => (
+    <div className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)}>{children}</div>
 );
 
 const ContactItem = ({ contact, onStartChat }: { contact: Contact; onStartChat: (contact: Contact) => void; }) => (
@@ -42,27 +44,30 @@ const ContactItem = ({ contact, onStartChat }: { contact: Contact; onStartChat: 
     </ListItem>
 );
 
-const CallLogItem = ({ call }: { call: Call }) => (
-    <ListItem>
-        <div className="flex items-center gap-4 flex-grow">
-            <Avatar className="h-12 w-12 text-2xl">
-                <AvatarFallback>{call.contact.emoji}</AvatarFallback>
-            </Avatar>
-            <div className="flex-grow">
-                <p className={`font-semibold ${call.status === 'missed' ? 'text-destructive' : ''}`}>{call.contact.name}</p>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {call.status === 'incoming' && <ArrowDownLeftIcon className="h-4 w-4 text-green-500" />}
-                    {call.status === 'outgoing' && <ArrowUpRightIcon className="h-4 w-4 text-blue-500" />}
-                    {call.status === 'missed' && <ArrowDownLeftIcon className="h-4 w-4 text-destructive" />}
-                    <p>{call.time}</p>
+const CallLogItem = ({ call, onStartCall }: { call: Call; onStartCall: (contact: Contact, type: 'video' | 'voice') => void; }) => {
+    const isGroupCall = 'isGroup' in call.contact && call.contact.isGroup;
+    return (
+        <ListItem>
+            <div className="flex items-center gap-4 flex-grow">
+                <Avatar className="h-12 w-12 text-2xl">
+                    <AvatarFallback>{call.contact.emoji}</AvatarFallback>
+                </Avatar>
+                <div className="flex-grow">
+                    <p className={`font-semibold ${call.status === 'missed' ? 'text-destructive' : ''}`}>{call.contact.name}</p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        {call.status === 'incoming' && <ArrowDownLeftIcon className="h-4 w-4 text-green-500" />}
+                        {call.status === 'outgoing' && <ArrowUpRightIcon className="h-4 w-4 text-blue-500" />}
+                        {call.status === 'missed' && <ArrowDownLeftIcon className="h-4 w-4 text-destructive" />}
+                        <p>{isGroupCall && 'Group Call |'} {call.time}</p>
+                    </div>
                 </div>
             </div>
-        </div>
-        <Button variant="ghost" size="icon">
-            {call.type === 'video' ? <VideoCallIcon className="h-6 w-6 text-primary" /> : <VoiceCallIcon className="h-6 w-6 text-primary" />}
-        </Button>
-    </ListItem>
-);
+            <Button variant="ghost" size="icon" onClick={() => onStartCall(call.contact, call.type)}>
+                {call.type === 'video' ? <VideoCallIcon className="h-6 w-6 text-primary" /> : <VoiceCallIcon className="h-6 w-6 text-primary" />}
+            </Button>
+        </ListItem>
+    );
+}
 
 const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: (req: Update) => void, onReject: (req: Update) => void }) => {
     if (update.type === 'request') {
@@ -85,7 +90,7 @@ const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: 
     return <div className="p-3 text-sm text-muted-foreground">{update.message}</div>;
 };
 
-export default function MainView({ user, contacts, updates, calls, onStartChat, onOpenAddFriend, onOpenProfile, onAcceptRequest, onRejectRequest }: MainViewProps) {
+export default function MainView({ user, contacts, updates, calls, onStartChat, onOpenAddFriend, onOpenProfile, onAcceptRequest, onRejectRequest, onStartCall }: MainViewProps) {
   return (
     <div className="w-full h-full flex flex-col bg-background">
       <header className="bg-header-bg text-icon-color shadow-md z-10">
@@ -116,7 +121,7 @@ export default function MainView({ user, contacts, updates, calls, onStartChat, 
                     {updates.map((update, i) => <UpdateItem key={i} update={update} onAccept={onAcceptRequest} onReject={onRejectRequest} />)}
                 </TabsContent>
                 <TabsContent value="calls">
-                    {calls.map((call, i) => <CallLogItem key={i} call={call} />)}
+                    {calls.map((call, i) => <CallLogItem key={i} call={call} onStartCall={onStartCall} />)}
                 </TabsContent>
             </ScrollArea>
         </div>

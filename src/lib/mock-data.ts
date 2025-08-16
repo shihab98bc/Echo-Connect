@@ -11,9 +11,38 @@ export const mockUser = {
 export const mockContacts = [
     { id: 'user2', name: 'Zoe Lee', emoji: '🎨', lastMessage: 'See you tomorrow!', timestamp: '10:48 AM', unread: 2 },
     { id: 'user3', name: 'Ben Carter', emoji: '🚀', lastMessage: 'The project is looking great. Good job!', timestamp: '9:15 AM', unread: 0 },
+    { 
+        id: 'group1', 
+        name: 'Design Team', 
+        emoji: '🎨🚀🌟', 
+        lastMessage: 'Ben: Let\'s sync up at 3 PM.', 
+        timestamp: '11:30 AM', 
+        unread: 5,
+        isGroup: true,
+        members: [
+            { id: 'user1', name: 'Alex Ray', emoji: '😎' },
+            { id: 'user2', name: 'Zoe Lee', emoji: '🎨' },
+            { id: 'user3', name: 'Ben Carter', emoji: '🚀' },
+            { id: 'user4', name: 'Mia Wong', emoji: '🌟' },
+        ]
+    },
     { id: 'user4', name: 'Mia Wong', emoji: '🌟', lastMessage: 'Can you send me the file?', timestamp: 'Yesterday', unread: 0 },
     { id: 'user5', name: 'Leo Martinez', emoji: '🎸', lastMessage: 'Let\'s practice this weekend.', timestamp: 'Yesterday', unread: 1 },
     { id: 'user6', name: 'Eva Chen', emoji: '💡', lastMessage: 'I have an idea for the new feature.', timestamp: 'Friday', unread: 0 },
+    { 
+        id: 'group2', 
+        name: 'Weekend Jam', 
+        emoji: '🎸💡', 
+        lastMessage: 'You: Who can make it on Saturday?', 
+        timestamp: 'Wednesday', 
+        unread: 0,
+        isGroup: true,
+        members: [
+            { id: 'user1', name: 'Alex Ray', emoji: '😎' },
+            { id: 'user5', name: 'Leo Martinez', emoji: '🎸' },
+            { id: 'user6', name: 'Eva Chen', emoji: '💡' },
+        ]
+    },
 ];
 
 export const mockMessages: Record<string, { sender: string; text: string; timestamp: string }[]> = {
@@ -35,6 +64,16 @@ export const mockMessages: Record<string, { sender: string; text: string; timest
         { sender: 'user1', text: 'Hey, are we on for practice?', timestamp: 'Yesterday' },
         { sender: 'user5', text: 'Let\'s practice this weekend.', timestamp: 'Yesterday' },
     ],
+    group1: [
+        { sender: 'user2', text: 'Hey team, the new mockups are ready for review!', timestamp: '11:25 AM' },
+        { sender: 'user4', text: 'Awesome, I\'ll take a look now.', timestamp: '11:26 AM' },
+        { sender: 'user1', text: 'Looking good Zoe!', timestamp: '11:28 AM' },
+        { sender: 'user3', text: 'Let\'s sync up at 3 PM to discuss feedback.', timestamp: '11:30 AM' },
+    ],
+    group2: [
+        { sender: 'user5', text: 'Practice this weekend?', timestamp: 'Wednesday' },
+        { sender: 'user1', text: 'Who can make it on Saturday?', timestamp: 'Wednesday' },
+    ],
 };
   
 export const mockUpdates = [
@@ -43,7 +82,8 @@ export const mockUpdates = [
 ];
   
 export const mockCalls = [
+    { contact: mockContacts.find(c => c.id === 'group1')!, type: 'video' as const, status: 'missed' as const, time: '2:45 PM' },
     { contact: mockContacts[0], type: 'video' as const, status: 'outgoing' as const, time: '12:30 PM' },
     { contact: mockContacts[2], type: 'voice' as const, status: 'incoming' as const, time: '11:15 AM' },
-    { contact: mockContacts[3], type: 'video' as const, status: 'missed' as const, time: 'Yesterday' },
+    { contact: mockContacts[4], type: 'video' as const, status: 'missed' as const, time: 'Yesterday' },
 ];
