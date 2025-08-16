@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -157,7 +158,7 @@ export default function AppShell() {
 
              setMessages(prev => {
                 const existingMessages = prev[contact.id] || [];
-                const updatedMessages = [...existingMessages];
+                let updatedMessages = [...existingMessages];
 
                 changedDocs.forEach(change => {
                     const newMsg = {id: change.doc.id, ...change.doc.data()} as Message;
@@ -175,20 +176,15 @@ export default function AppShell() {
                         if (index > -1) {
                             updatedMessages[index] = { ...updatedMessages[index], ...newMsg };
                         } else {
-                            // This can happen if a message status changes before the optimistic one is replaced
                             const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
                             if (tempIndex > -1) {
                                 updatedMessages[tempIndex] = newMsg;
-                            } else {
-                                // If not found, it's a new modification to an existing message.
+                            } else if (!updatedMessages.some(m => m.id === newMsg.id)) {
                                 updatedMessages.push(newMsg);
                             }
                         }
                     } else if (change.type === 'removed') {
-                        const index = updatedMessages.findIndex(m => m.id === newMsg.id);
-                        if (index > -1) {
-                            updatedMessages.splice(index, 1);
-                        }
+                        updatedMessages = updatedMessages.filter(m => m.id !== newMsg.id);
                     }
                 });
                 
@@ -468,6 +464,7 @@ export default function AppShell() {
 
         if (type === 'image' || type === 'audio') {
             if (!content) throw new Error("File content is missing.");
+            
             const fileExtension = type === 'image' ? (content as File).name.split('.').pop() : 'webm';
             const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
 
@@ -516,12 +513,12 @@ export default function AppShell() {
             };
 
             transaction.set(userContactRef, {
-                ...contactUpdatePayload,
                 name: otherUserData.name,
                 emoji: otherUserData.emoji,
                 photoURL: otherUserData.photoURL,
                 unread: 0,
                 isMuted: false,
+                ...contactUpdatePayload,
             }, { merge: true });
 
             
@@ -532,12 +529,12 @@ export default function AppShell() {
                 });
             } else {
                 transaction.set(otherUserContactRef, {
-                    ...contactUpdatePayload,
                     name: currentUser.name,
                     emoji: currentUser.emoji,
                     photoURL: currentUser.photoURL,
                     unread: 1,
                     isMuted: false,
+                    ...contactUpdatePayload,
                 });
             }
 
@@ -560,14 +557,22 @@ export default function AppShell() {
       const chatId = [currentUser.uid, contactId].sort().join('_');
       const messageRef = doc(db, 'chats', chatId, 'messages', messageId);
       try {
+          // Use an object that Firestore will accept, removing undefined values.
+          const updatePayload: {text: string, isDeleted: boolean, type: 'text', caption?:null, duration?:null, replyTo?:null} = {
+              text: 'This message was deleted',
+              isDeleted: true,
+              type: 'text',
+          };
+          
           await updateDoc(messageRef, {
               text: 'This message was deleted',
               isDeleted: true,
               type: 'text',
-              caption: undefined,
-              duration: undefined,
-              replyTo: undefined,
+              caption: null,
+              duration: null,
+              replyTo: null,
           });
+
       } catch (error) {
           console.error("Error deleting message:", error);
           toast({ variant: 'destructive', title: 'Error', description: 'Could not delete message.' });
@@ -974,7 +979,3 @@ export default function AppShell() {
     </div>
   );
 }
-
-    
-
-    
