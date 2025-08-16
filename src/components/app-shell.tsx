@@ -82,8 +82,11 @@ export default function AppShell() {
   useEffect(() => {
     if (incomingCall && ringtoneRef.current) {
         ringtoneRef.current.play().catch(e => console.error("Autoplay failed", e));
+    } else if (!incomingCall && ringtoneRef.current) {
+        ringtoneRef.current.pause();
+        ringtoneRef.current.currentTime = 0;
     }
-  }, [incomingCall])
+  }, [incomingCall]);
 
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
@@ -163,18 +166,10 @@ export default function AppShell() {
             const callContact = incomingCall.contact;
             const callType = incomingCall.type;
             setIncomingCall(null);
-            if (ringtoneRef.current) {
-                ringtoneRef.current.pause();
-                ringtoneRef.current.currentTime = 0;
-            }
             handleStartCall(callContact, callType);
           }}
           onReject={() => {
             setIncomingCall(null);
-            if (ringtoneRef.current) {
-                ringtoneRef.current.pause();
-                ringtoneRef.current.currentTime = 0;
-            }
           }}
         />
       )}
@@ -183,7 +178,7 @@ export default function AppShell() {
         id="ringtone"
         ref={ringtoneRef}
         loop
-        src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
       />
     </div>
   );
