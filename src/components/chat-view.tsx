@@ -26,7 +26,7 @@ interface ChatViewProps {
   messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
-  onSendMessage: (contactId: string, message: string) => void;
+  onSendMessage: (contactId: string, message: string, type?: 'text' | 'image') => void;
   onOpenProfile: () => void;
   onToggleMute: (contactId: string) => void;
   onClearChat: (contactId: string) => void;
@@ -158,6 +158,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 id="chat-input"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend(e)}
                 placeholder="Type a message..." 
                 className="flex-grow rounded-full bg-white pr-24"
                 autoComplete="off"
