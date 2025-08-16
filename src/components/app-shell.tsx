@@ -101,13 +101,60 @@ export default function AppShell() {
   const handleEndCall = useCallback(() => {
     setActiveCall(null);
     setCallToAnswer(null);
-    setView(activeChat ? 'chat' : 'main');
-  }, [activeChat]);
+    setView(prevView => {
+        // Only switch view if we are in the 'call' view.
+        // This prevents race conditions where an ended call might
+        // incorrectly pull the user out of a chat they just opened.
+        if (prevView === 'call') {
+            return activeChat ? 'chat' : 'main';
+        }
+        return prevView;
+    });
+}, [activeChat]);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        unsubscribeRefs.current.forEach(unsub => unsub());
+        unsubscribeRefs.current = [];
+
+        if (firebaseUser) {
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as AppUser;
+                setCurrentUser(userData);
+                setView('main');
+            } else {
+                const tempUser: AppUser = {
+                    uid: firebaseUser.uid,
+                    name: firebaseUser.displayName || 'New User',
+                    emoji: '👋',
+                    email: firebaseUser.email,
+                    photoURL: firebaseUser.photoURL,
+                };
+                setCurrentUser(tempUser);
+                setView('main');
+                setProfileSetupOpen(true);
+            }
+        } else {
+            setCurrentUser(null);
+            setView('auth');
+            setContacts([]);
+            setMessages({});
+            setUpdates([]);
+            setActiveChat(null);
+            setActiveCall(null);
+        }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeRefs.current.forEach(unsub => unsub());
+    };
+  }, []);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
-    unsubscribeRefs.current.forEach(unsub => unsub());
-    unsubscribeRefs.current = [];
-
     const userDocRef = doc(db, 'users', uid);
     const unsubUser = onSnapshot(userDocRef, (doc) => {
         if(doc.exists()) {
@@ -134,13 +181,13 @@ export default function AppShell() {
             const batch = writeBatch(db);
             let hasUpdates = false;
             newMessages.forEach(msg => {
-                if (msg.sender !== uid && msg.status === 'sent') {
+                if (msg.sender !== uid && msg.status !== 'delivered' && msg.status !== 'seen') {
                     const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
                     batch.update(msgRef, { status: 'delivered' });
                     hasUpdates = true;
                 }
             });
-            if(hasUpdates) batch.commit();
+            if(hasUpdates) batch.commit().catch(console.error);
           });
           unsubscribeRefs.current.push(unsubMessages);
         });
@@ -160,7 +207,7 @@ export default function AppShell() {
             const callData = change.doc.data();
             const callId = change.doc.id;
 
-            if (change.type === 'added') {
+            if (change.type === 'added' && callId.includes(uid)) {
                 const calleeId = callId.split('_').find(id => id !== callData.offer.callerId);
                 
                 if (calleeId === uid && !callData.answer) {
@@ -195,11 +242,9 @@ export default function AppShell() {
                     }
                 }
             } else if (change.type === 'removed') {
-              if (incomingCall?.id === callId) {
-                setIncomingCall(null);
-              }
-              if ((activeCall?.callId === callId) || (callToAnswer?.id === callId)) {
+              if (incomingCall?.id === callId || activeCall?.callId === callId || callToAnswer?.id === callId) {
                 handleEndCall();
+                setIncomingCall(null);
                 toast({ title: 'Call Ended', description: 'The other user has ended the call.' });
               }
             }
@@ -209,45 +254,15 @@ export default function AppShell() {
   }, [toast, handleEndCall, activeCall?.callId, callToAnswer?.id, incomingCall?.id]);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-        unsubscribeRefs.current.forEach(unsub => unsub());
-        unsubscribeRefs.current = [];
-
-        if (firebaseUser) {
-            const userDocRef = doc(db, 'users', firebaseUser.uid);
-            const userDocSnap = await getDoc(userDocRef);
-
-            if (userDocSnap.exists()) {
-                const userData = userDocSnap.data() as AppUser;
-                setCurrentUser(userData);
-                setView('main');
-                setupFirestoreListeners(userData.uid);
-            } else {
-                const tempUser: AppUser = {
-                    uid: firebaseUser.uid,
-                    name: firebaseUser.displayName || 'New User',
-                    emoji: '👋',
-                    email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL,
-                };
-                setCurrentUser(tempUser);
-                setView('main');
-                setProfileSetupOpen(true);
-            }
-        } else {
-            setCurrentUser(null);
-            setView('auth');
-            setContacts([]);
-            setMessages({});
-            setUpdates([]);
-        }
-    });
-
+    if (currentUser?.uid) {
+        setupFirestoreListeners(currentUser.uid);
+    }
     return () => {
-      unsubscribeAuth();
       unsubscribeRefs.current.forEach(unsub => unsub());
+      unsubscribeRefs.current = [];
     };
-  }, [setupFirestoreListeners]);
+  }, [currentUser?.uid, setupFirestoreListeners]);
+
 
   const handleProfileSave = useCallback(async (name: string, emoji: string) => {
     const firebaseUser = auth.currentUser;
@@ -289,13 +304,12 @@ export default function AppShell() {
 
         setCurrentUser(userPayload);
         setProfileSetupOpen(false);
-        setupFirestoreListeners(firebaseUser.uid);
         toast({ title: `Welcome, ${name}!`, description: "Your profile is set up." });
     } catch (error) {
         console.error("Error saving profile:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not save your profile.' });
     }
-  }, [setupFirestoreListeners, toast]);
+  }, [toast]);
 
   const handleStartChat = useCallback(async (contact: Contact) => {
     if (!currentUser) return;
@@ -314,6 +328,9 @@ export default function AppShell() {
             return;
         }
     }
+
+    setActiveChat(contact);
+    setView('chat');
 
     if (contact.unread > 0) {
         const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
@@ -340,9 +357,6 @@ export default function AppShell() {
             console.error("Error marking messages as seen:", error);
         }
     }
-
-    setActiveChat(contact);
-    setView('chat');
   }, [currentUser, messages, toast]);
 
   const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
@@ -508,9 +522,6 @@ export default function AppShell() {
   const handleLogout = useCallback(async () => {
     try {
         await signOut(auth);
-        setActiveChat(null);
-        setActiveCall(null);
-        setIncomingCall(null);
     } catch (error) {
         toast({
             variant: 'destructive',
