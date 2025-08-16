@@ -145,8 +145,18 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Take a photo</DialogTitle>
+          <DialogHeader className="p-4 absolute top-0 left-0 z-10 w-full">
+             <DialogTitle className="sr-only">Take a photo</DialogTitle>
+             <div className="flex justify-between items-center">
+                <Button variant="ghost" size="icon" onClick={onClose} className="bg-black/50 hover:bg-black/70 rounded-full">
+                    <X className="w-6 h-6" />
+                </Button>
+                {!photoDataUrl && hasFlash && !isFrontCamera &&(
+                    <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-black/50 hover:bg-black/70 rounded-full">
+                        {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
+                    </Button>
+                )}
+             </div>
           </DialogHeader>
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
             <AnimatePresence>
@@ -185,16 +195,6 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                 />
               )}
             </AnimatePresence>
-              
-              <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-4 left-4 bg-black/50 hover:bg-black/70 rounded-full z-10">
-                  <X className="w-6 h-6" />
-              </Button>
-             
-              {!photoDataUrl && hasFlash && !isFrontCamera &&(
-                <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 rounded-full z-10">
-                    {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
-                </Button>
-              )}
           </div>
 
           <div className="p-4 flex items-center justify-center bg-black">
@@ -207,14 +207,21 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                       </Button>
                   </div>
               ) : (
-                  <div className="flex w-full justify-around items-center">
-                      <div className="w-16 h-12"></div>
+                  <div className="flex w-full justify-between items-center">
+                       <div className="w-12 h-12 flex items-center justify-center">
+                         {hasFlash && !isFrontCamera && (
+                            <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12">
+                                {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
+                            </Button>
+                         )}
+                       </div>
                       <Button 
                           onClick={handleCapture} 
                           className="w-20 h-20 rounded-full border-4 border-white bg-transparent hover:bg-white/20 active:bg-white/30"
                           disabled={!hasPermission}
+                          aria-label="Take Photo"
                       />
-                      <Button variant="ghost" size="icon" onClick={handleSwitchCamera} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" disabled={!hasPermission}>
+                      <Button variant="ghost" size="icon" onClick={handleSwitchCamera} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" disabled={!hasPermission} aria-label="Switch Camera">
                           <SwitchCameraIcon className="w-6 h-6" />
                       </Button>
                   </div>
