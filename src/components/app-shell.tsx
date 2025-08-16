@@ -75,11 +75,15 @@ export default function AppShell() {
             if (isNewUser) {
                 setProfileSetupOpen(true);
             } else {
+                setContacts(initialContacts);
+                setMessages(initialMessages);
                 setView('main');
             }
         } else {
             setCurrentUser(null);
             setView('auth');
+            setContacts([]);
+            setMessages({});
         }
     });
 
@@ -112,6 +116,26 @@ export default function AppShell() {
 
   const handleProfileSave = (name: string, emoji: string) => {
     if (currentUser) {
+        const welcomeBotId = 'welcome-bot';
+        const welcomeMessage = {
+            sender: welcomeBotId,
+            text: `Welcome to EchoConnect, ${name}! To get started, tap the icon in the top right to add a friend.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'text' as const
+        };
+        const welcomeContact: Contact = {
+            id: welcomeBotId,
+            name: 'Welcome to EchoConnect',
+            emoji: '👋',
+            lastMessage: welcomeMessage.text,
+            timestamp: welcomeMessage.timestamp,
+            unread: 1,
+            isMuted: false,
+        };
+
+        setContacts([welcomeContact]);
+        setMessages({ [welcomeBotId]: [welcomeMessage]});
+
         // In a real app, update the user profile in Firebase Auth and your database
         setCurrentUser(prev => prev ? ({...prev, name, emoji}) : null);
         setProfileSetupOpen(false);
