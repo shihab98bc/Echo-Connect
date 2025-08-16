@@ -424,15 +424,20 @@ export default function AppShell() {
             lastMessageText = finalContentUrl;
         }
 
-        const messagePayload: Omit<Message, 'id'> = {
+        const messagePayload: Omit<Message, 'id' | 'caption' | 'duration'> & { caption?: string, duration?: number } = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
             type: type,
             status: 'sent', // Initially sent
-            caption: options.caption,
-            duration: options.duration,
         };
+
+        if (options.caption) {
+          messagePayload.caption = options.caption;
+        }
+        if (options.duration) {
+          messagePayload.duration = options.duration;
+        }
 
         const batch = writeBatch(db);
         const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
