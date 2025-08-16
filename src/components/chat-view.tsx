@@ -150,7 +150,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration }: Mes
 );
 
 
-const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: number) => void, onCancel: () => void }) => {
+const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duration: number) => void, onCancel: () => void }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [duration, setDuration] = useState(0);
     const durationRef = useRef(0);
@@ -162,7 +162,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
     const startRecording = useCallback(async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const recorder = new MediaRecorder(stream);
+            const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current = recorder;
 
             recorder.ondataavailable = (e) => {
@@ -173,10 +173,16 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
                 stream.getTracks().forEach(track => track.stop());
                 if (isCancelledRef.current) {
                     isCancelledRef.current = false;
+                    chunksRef.current = [];
                     return;
                 }
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-                onSend(blob, durationRef.current);
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const dataUrl = e.target?.result as string;
+                    onSend(dataUrl, durationRef.current);
+                };
+                reader.readAsDataURL(blob);
                 chunksRef.current = [];
             };
 
@@ -278,10 +284,10 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         };
         reader.readAsDataURL(file);
       } else {
-        onSendMessage(contact.id, `📄 File: ${file.name}`);
         toast({
-          title: 'File Sent',
-          description: `${file.name} has been sent.`,
+          title: 'File type not supported',
+          description: `Sending files other than images is not yet implemented.`,
+          variant: 'destructive',
         });
       }
     }
@@ -291,13 +297,8 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     }
   };
   
-  const handleSendVoiceMessage = (blob: Blob, duration: number) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        onSendMessage(contact.id, dataUrl, 'audio', duration);
-    };
-    reader.readAsDataURL(blob);
+  const handleSendVoiceMessage = (dataUrl: string, duration: number) => {
+    onSendMessage(contact.id, dataUrl, 'audio', duration);
     setIsRecording(false);
   };
 
@@ -376,7 +377,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                         <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
                             <Paperclip className="h-5 w-5" />
                         </Button>
-                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
                         <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
                             <CameraIcon className="h-5 w-5" />
                         </Button>

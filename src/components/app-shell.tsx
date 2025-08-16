@@ -13,9 +13,10 @@ import SecurityModal from '@/components/modals/security-modal';
 import CameraModal from '@/components/modals/camera-modal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
 import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
@@ -231,29 +232,36 @@ export default function AppShell() {
     
     const chatId = [currentUser.uid, contactId].sort().join('_');
     
-    const message: Omit<Message, 'id'> = {
-      sender: currentUser.uid,
-      text: messageText,
-      timestamp: serverTimestamp(),
-      type: type,
-    };
-    if (duration) message.duration = duration;
-
-    let lastMessageText = message.text;
-    if (type === 'image') lastMessageText = '📷 Photo';
-    if (type === 'audio') lastMessageText = '🎤 Voice message';
+    let lastMessageText = messageText;
+    let finalMessageText = messageText;
 
     try {
-        const newDocRef = doc(collection(db, 'chats', chatId, 'messages'));
-        await setDoc(newDocRef, message);
-        
-        const timestamp = new Date();
-        // Update contact docs for both users
-        const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
-        await updateDoc(userContactRef, { lastMessage: lastMessageText, timestamp });
+      if (type === 'image' || type === 'audio') {
+          const fileExtension = type === 'image' ? 'jpg' : 'webm';
+          const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
+          const uploadResult = await uploadString(storageRef, messageText, 'data_url');
+          finalMessageText = await getDownloadURL(uploadResult.ref);
+          lastMessageText = type === 'image' ? '📷 Photo' : '🎤 Voice message';
+      }
 
-        const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-        await updateDoc(otherUserContactRef, { lastMessage: lastMessageText, timestamp });
+      const message: Omit<Message, 'id'> = {
+        sender: currentUser.uid,
+        text: finalMessageText,
+        timestamp: serverTimestamp(),
+        type: type,
+      };
+      if (duration) message.duration = duration;
+
+      const newDocRef = doc(collection(db, 'chats', chatId, 'messages'));
+      await setDoc(newDocRef, message);
+      
+      const timestamp = new Date();
+      // Update contact docs for both users
+      const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+      await updateDoc(userContactRef, { lastMessage: lastMessageText, timestamp });
+
+      const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
+      await updateDoc(otherUserContactRef, { lastMessage: lastMessageText, timestamp });
 
     } catch (error) {
         console.error("Error sending message:", error);
