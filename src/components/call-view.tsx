@@ -266,7 +266,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                           dragConstraints={localVideoContainerRef}
                           dragSnapToOrigin={false}
                           dragElastic={0.1}
-                          initial={{ top: 'auto', bottom: 120, right: 20, x:0, y:0 }}
+                          initial={{ top: 20, right: 20, x:0, y:0 }}
                           dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
                       >
                           <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
