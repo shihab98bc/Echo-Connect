@@ -51,6 +51,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const participants = isGroupCall && 'members' in contact ? contact.members : [contact];
   const remoteParticipants = participants.filter(p => p.id !== user.uid);
   const localParticipant = { id: user.uid, name: "You", emoji: user.emoji };
+  const isAudioCall = type === 'voice';
 
   return (
     <div className="absolute inset-0 bg-gray-800 text-white flex flex-col items-center justify-between z-50">
@@ -88,7 +89,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
             )}
             <h2 className="text-3xl font-bold font-headline mt-4 text-shadow">{contact.name}</h2>
             <p className="text-lg text-white/80 text-shadow">
-                {isGroupCall ? `Group ${type} call` : `Calling...`}
+                {isGroupCall ? `Group ${type} call` : isAudioCall ? 'Calling...' : 'Video Call'}
             </p>
         </div>
 
@@ -96,14 +97,16 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         {/* Call Controls */}
         <div className="flex flex-col items-center gap-6 pb-4">
             <div className="flex justify-center gap-4 p-4 bg-black/30 rounded-full backdrop-blur-sm">
-                 <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsVideoEnabled(v => !v)}
-                    className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", !isVideoEnabled && "bg-white/10")}
-                >
-                    {isVideoEnabled ? <VideoIcon className="h-7 w-7" /> : <VideoOffIcon className="h-7 w-7" />}
-                </Button>
+                 {!isAudioCall && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsVideoEnabled(v => !v)}
+                        className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", !isVideoEnabled && "bg-white/10")}
+                    >
+                        {isVideoEnabled ? <VideoIcon className="h-7 w-7" /> : <VideoOffIcon className="h-7 w-7" />}
+                    </Button>
+                 )}
                 <Button
                     variant="ghost"
                     size="icon"
@@ -112,15 +115,17 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                 >
                     {isMuted ? <MicOffIcon className="h-7 w-7" /> : <MicIcon className="h-7 w-7" />}
                 </Button>
-                 <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {}} // Placeholder for switch camera
-                    className="w-14 h-14 rounded-full text-white hover:bg-white/20 disabled:opacity-50"
-                    disabled={!isVideoEnabled}
-                >
-                    <SwitchCameraIcon className="h-7 w-7" />
-                </Button>
+                {!isAudioCall && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {}} // Placeholder for switch camera
+                        className="w-14 h-14 rounded-full text-white hover:bg-white/20 disabled:opacity-50"
+                        disabled={!isVideoEnabled}
+                    >
+                        <SwitchCameraIcon className="h-7 w-7" />
+                    </Button>
+                )}
                 <Button
                     variant="ghost"
                     size="icon"
