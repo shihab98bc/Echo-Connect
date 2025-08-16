@@ -57,6 +57,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
         setHasFlash(true);
       } else {
         setHasFlash(false);
+        setIsFlashOn(false);
       }
 
       if (videoRef.current) {
@@ -93,7 +94,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   };
   
   const handleToggleFlash = async () => {
-    if (!stream || !hasFlash) return;
+    if (!stream || !hasFlash || isFrontCamera) return;
 
     const videoTrack = stream.getVideoTracks()[0];
     try {
@@ -189,7 +190,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                   <X className="w-6 h-6" />
               </Button>
              
-              {!photoDataUrl && hasFlash && (
+              {!photoDataUrl && hasFlash && !isFrontCamera &&(
                 <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 rounded-full z-10">
                     {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
                 </Button>
