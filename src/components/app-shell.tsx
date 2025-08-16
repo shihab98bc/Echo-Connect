@@ -106,7 +106,6 @@ export default function AppShell() {
                 setupFirestoreListeners(userData.uid);
             } else {
                 // This is a new user, show profile setup
-                // Create a temporary user object to allow the app to render
                 const tempUser: AppUser = {
                     uid: firebaseUser.uid,
                     name: firebaseUser.displayName || 'New User',
@@ -252,8 +251,7 @@ export default function AppShell() {
       };
       if (duration) message.duration = duration;
 
-      const newDocRef = doc(collection(db, 'chats', chatId, 'messages'));
-      await setDoc(newDocRef, message);
+      await addDoc(collection(db, 'chats', chatId, 'messages'), message);
       
       const timestamp = new Date();
       // Update contact docs for both users

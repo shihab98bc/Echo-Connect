@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -10,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 
 interface CallViewProps {
@@ -18,6 +19,18 @@ interface CallViewProps {
   type: 'video' | 'voice';
   onEndCall: () => void;
 }
+
+const servers = {
+    iceServers: [
+        {
+            urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'],
+        },
+    ],
+    iceCandidatePoolSize: 10,
+};
+
+let pc: RTCPeerConnection | null = null;
+
 
 const ParticipantVideo = ({ participant, isLocal, stream, isVideoEnabled, isAudioOnly, isMuted }: { participant: { id?: string, name: string, emoji: string }, isLocal: boolean, stream: MediaStream | null, isVideoEnabled: boolean, isAudioOnly: boolean, isMuted?: boolean }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -110,35 +123,97 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
 
   useEffect(() => {
     let stream: MediaStream;
-    const getMedia = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-            video: type === 'video',
-            audio: true,
-        });
-        setLocalStream(stream);
-        setHasPermission(true);
+    let callDocRef: any;
 
-      } catch (error) {
-        console.error('Error accessing media devices.', error);
-        setHasPermission(false);
-        toast({
-          variant: 'destructive',
-          title: 'Media Access Denied',
-          description: 'Please enable camera and microphone permissions in your browser settings to use this feature.',
+    const startCall = async () => {
+        pc = new RTCPeerConnection(servers);
+        
+        const remote = new MediaStream();
+        setRemoteStream(remote);
+
+        pc.ontrack = (event) => {
+            event.streams[0].getTracks().forEach((track) => {
+                remote.addTrack(track);
+            });
+        };
+
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: type === 'video',
+                audio: true,
+            });
+            setLocalStream(stream);
+            stream.getTracks().forEach((track) => {
+                pc?.addTrack(track, stream);
+            });
+            setHasPermission(true);
+        } catch (error) {
+            console.error('Error accessing media devices.', error);
+            setHasPermission(false);
+            toast({
+                variant: 'destructive',
+                title: 'Media Access Denied',
+                description: 'Please enable camera and microphone permissions.',
+            });
+            onEndCall();
+            return;
+        }
+
+        // --- Signaling Logic ---
+        const callId = [user.uid, contact.id].sort().join('_');
+        callDocRef = doc(db, 'calls', callId);
+        const offerCandidates = collection(callDocRef, 'offerCandidates');
+        const answerCandidates = collection(callDocRef, 'answerCandidates');
+        
+        pc.onicecandidate = event => {
+            event.candidate && addDoc(offerCandidates, event.candidate.toJSON());
+        };
+
+        const offerDescription = await pc.createOffer();
+        await pc.setLocalDescription(offerDescription);
+
+        const offer = {
+            sdp: offerDescription.sdp,
+            type: offerDescription.type,
+        };
+
+        await setDoc(callDocRef, { offer });
+
+        onSnapshot(callDocRef, (snapshot) => {
+            const data = snapshot.data();
+            if (!pc?.currentRemoteDescription && data?.answer) {
+                const answerDescription = new RTCSessionDescription(data.answer);
+                pc?.setRemoteDescription(answerDescription);
+            }
         });
-        onEndCall();
-      }
+
+        onSnapshot(answerCandidates, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') {
+                    const candidate = new RTCIceCandidate(change.doc.data());
+                    pc?.addIceCandidate(candidate);
+                }
+            });
+        });
     };
 
-    getMedia();
+    startCall();
 
     return () => {
         localStream?.getTracks().forEach(track => track.stop());
+        remoteStream?.getTracks().forEach(track => track.stop());
+        if (pc) {
+            pc.close();
+            pc = null;
+        }
+        if (callDocRef) {
+            deleteDoc(callDocRef);
+        }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, toast, onEndCall]);
-
+  }, [type, user.uid, contact.id, onEndCall, toast]);
+  
+  
   useEffect(() => {
     if (controlsTimerRef.current) {
       clearTimeout(controlsTimerRef.current);
@@ -160,9 +235,9 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
     setShowControls(s => !s);
   };
 
-  const isGroupCall = 'isGroup' in contact && contact.isGroup;
-  const participants = isGroupCall && 'members' in contact ? contact.members : [contact];
-  const remoteParticipants = participants.filter(p => p.id !== user.uid);
+  const isGroupCall = 'isGroup' in contact && (contact as any).isGroup;
+  const participants = isGroupCall && 'members' in contact ? (contact as any).members : [contact];
+  const remoteParticipants = participants.filter((p: any) => p.id !== user.uid);
   const localParticipant = { id: user.uid, name: "You", emoji: user.emoji };
   
   const toggleMute = () => {
@@ -285,7 +360,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                 >
                     <div className={cn("flex justify-center flex-wrap gap-8 transition-all duration-300", isGroupCall ? "scale-90" : "scale-100")}>
                         {isGroupCall ? (
-                            participants.map(p => <ParticipantAvatar key={p.id} participant={p} isAudioCall={isAudioCall} />)
+                            participants.map((p: any) => <ParticipantAvatar key={p.id} participant={p} isAudioCall={isAudioCall} />)
                         ) : (
                             <ParticipantAvatar participant={contact} isAudioCall={isAudioCall} />
                         )}

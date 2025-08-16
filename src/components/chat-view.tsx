@@ -111,11 +111,11 @@ const formatMessageTimestamp = (timestamp: any) => {
   let date: Date;
   if (timestamp instanceof Timestamp) {
     date = timestamp.toDate();
-  } else if (timestamp.seconds) {
+  } else if (timestamp && typeof timestamp.seconds === 'number') {
      date = new Date(timestamp.seconds * 1000);
   }
   else {
-    return ''; // Should not happen with firestore
+    return ''; // Should not happen with firestore server timestamps
   }
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
