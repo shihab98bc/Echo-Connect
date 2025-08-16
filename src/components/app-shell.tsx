@@ -42,6 +42,10 @@ export default function AppShell() {
   const [updates, setUpdates] = useState(initialUpdates);
   const [messages, setMessages] = useState(initialMessages);
 
+  // State for chat selection
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedChats, setSelectedChats] = useState<string[]>([]);
+
   const handleLogin = () => {
     setIsAuthenticated(true);
     const isNewUser = !user.name;
@@ -197,6 +201,40 @@ export default function AppShell() {
     });
   };
 
+  const handleToggleChatSelection = (contactId: string) => {
+    setSelectedChats(prev => 
+        prev.includes(contactId) 
+        ? prev.filter(id => id !== contactId)
+        : [...prev, contactId]
+    );
+  };
+  
+  const handleEnterSelectionMode = (contactId: string) => {
+    setIsSelectionMode(true);
+    setSelectedChats([contactId]);
+  };
+
+  const handleExitSelectionMode = () => {
+    setIsSelectionMode(false);
+    setSelectedChats([]);
+  };
+
+  const handleDeleteSelectedChats = () => {
+    setContacts(prev => prev.filter(c => !selectedChats.includes(c.id)));
+    setMessages(prev => {
+        const newMessages = { ...prev };
+        selectedChats.forEach(id => {
+            delete newMessages[id];
+        });
+        return newMessages;
+    });
+    toast({
+        title: `${selectedChats.length} chat(s) deleted.`,
+    });
+    handleExitSelectionMode();
+  };
+
+
   // Simulate receiving an incoming call for demo purposes
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -236,6 +274,12 @@ export default function AppShell() {
             onAcceptRequest={handleAcceptRequest}
             onRejectRequest={handleRejectRequest}
             onStartCall={handleStartCall}
+            isSelectionMode={isSelectionMode}
+            selectedChats={selectedChats}
+            onToggleChatSelection={handleToggleChatSelection}
+            onEnterSelectionMode={handleEnterSelectionMode}
+            onExitSelectionMode={handleExitSelectionMode}
+            onDeleteSelectedChats={handleDeleteSelectedChats}
           />
         );
       case 'chat':
@@ -276,7 +320,7 @@ export default function AppShell() {
     <div id="app-container" className="w-full max-w-[450px] h-[95vh] max-h-[950px] bg-background shadow-wa rounded-lg overflow-hidden flex flex-col relative transition-all duration-300">
       <AnimatePresence mode="wait">
         <motion.div
-            key={view}
+            key={view + (isSelectionMode ? '-select' : '')}
             variants={viewVariants}
             initial="initial"
             animate="enter"
