@@ -15,7 +15,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db, storage } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment, deleteDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 
 
@@ -47,7 +47,8 @@ export type Message = {
   text: string; 
   timestamp: any;
   type?: 'text' | 'image' | 'audio';
-  duration?: number 
+  duration?: number;
+  status?: 'sent' | 'delivered' | 'seen';
 };
 
 export type Call = { 
@@ -78,10 +79,13 @@ export default function AppShell() {
   const [isProfileViewOpen, setProfileViewOpen] = useState(false);
   const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
   const [isCameraOpen, setCameraOpen] = useState(false);
-  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  
+  const [callToAnswer, setCallToAnswer] = useState<any>(null);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+
 
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
-  const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice' } | null>(null);
+  const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice', callId: string } | null>(null);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [updates, setUpdates] = useState<Update[]>([]);
@@ -147,7 +151,7 @@ export default function AppShell() {
         const contactsData = snapshot.docs.map(doc => doc.data() as Contact);
         setContacts(contactsData);
 
-        // For each contact, listen to messages
+        // For each contact, listen to messages and update message status
         contactsData.forEach(contact => {
           const chatId = [uid, contact.id].sort().join('_');
           const messagesRef = collection(db, 'chats', chatId, 'messages');
@@ -156,6 +160,19 @@ export default function AppShell() {
           const unsubMessages = onSnapshot(messagesQuery, (msgSnapshot) => {
             const newMessages = msgSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Message));
             setMessages(prev => ({ ...prev, [contact.id]: newMessages }));
+            
+            // Mark received messages as 'seen'
+            const batch = writeBatch(db);
+            let hasUpdates = false;
+            newMessages.forEach(msg => {
+              if (msg.sender !== uid && msg.status !== 'seen') {
+                  const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+                  batch.update(msgRef, { status: 'seen' });
+                  hasUpdates = true;
+              }
+            });
+            if(hasUpdates) batch.commit();
+
           });
           unsubscribeRefs.current.push(unsubMessages);
         });
@@ -169,6 +186,47 @@ export default function AppShell() {
         setUpdates(requestsData);
     });
     unsubscribeRefs.current.push(unsubRequests);
+    
+    // Listener for incoming calls
+    const callDocsRef = collection(db, 'calls');
+    const unsubCalls = onSnapshot(callDocsRef, async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+            if (change.type === 'added') {
+                const callData = change.doc.data();
+                const callId = change.doc.id;
+                const calleeId = callId.split('_').find(id => id !== callData.offer.callerId);
+                
+                if (calleeId === uid && !callData.answer) {
+                    const callerDoc = await getDoc(doc(db, 'users', callData.offer.callerId));
+                    if (callerDoc.exists()) {
+                        const callerData = callerDoc.data() as AppUser;
+                        setIncomingCall({
+                            id: callId,
+                            contact: {
+                                id: callerData.uid,
+                                name: callerData.name,
+                                emoji: callerData.emoji,
+                                unread: 0,
+                                isMuted: false,
+                            },
+                            type: callData.offer.type,
+                            offer: callData.offer,
+                            onAccept: () => {
+                                setCallToAnswer({ id: callId, offer: callData.offer });
+                                setView('call');
+                                setIncomingCall(null);
+                            },
+                            onReject: async () => {
+                                await deleteDoc(doc(db, 'calls', callId));
+                                setIncomingCall(null);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    });
+    unsubscribeRefs.current.push(unsubCalls);
   };
 
 
@@ -253,6 +311,7 @@ export default function AppShell() {
         text: finalMessageText,
         timestamp: serverTimestamp(),
         type: type,
+        status: 'sent',
       };
       if (duration) message.duration = duration;
 
@@ -376,7 +435,7 @@ export default function AppShell() {
     if (!currentUser) return;
     try {
         const requestRef = doc(db, 'users', currentUser.uid, 'friendRequests', request.from.id);
-        await updateDoc(requestRef, { acknowledged: true }); // Or simply delete it
+        await deleteDoc(requestRef);
         toast({
             title: "Friend Request Rejected",
             description: `You have rejected the request from ${request.from.name}.`
@@ -403,12 +462,15 @@ export default function AppShell() {
   };
 
   const handleStartCall = (contact: Contact, type: 'video' | 'voice') => {
-    setActiveCall({ contact, type });
+    if (!currentUser) return;
+    const callId = [currentUser.uid, contact.id].sort().join('_');
+    setActiveCall({ contact, type, callId });
     setView('call');
   };
 
   const handleEndCall = () => {
     setActiveCall(null);
+    setCallToAnswer(null);
     setView(activeChat ? 'chat' : 'main');
   };
 
@@ -489,6 +551,8 @@ export default function AppShell() {
          </div>
       )
   }
+  
+  const [updatesViewed, setUpdatesViewed] = useState(false);
 
   const renderView = () => {
     switch (view) {
@@ -511,6 +575,8 @@ export default function AppShell() {
             onEnterSelectionMode={handleEnterSelectionMode}
             onExitSelectionMode={handleExitSelectionMode}
             onDeleteSelectedChats={handleDeleteSelectedChats}
+            updatesViewed={updatesViewed}
+            onViewUpdates={() => setUpdatesViewed(true)}
           />
         );
       case 'chat':
@@ -534,13 +600,16 @@ export default function AppShell() {
           />
         );
       case 'call':
-        if (!activeCall) return null;
+        if (!activeCall && !callToAnswer) return null;
         return (
           <CallView
             user={currentUser}
-            contact={activeCall.contact}
-            type={activeCall.type}
+            contact={activeCall?.contact || callToAnswer.contact}
+            type={activeCall?.type || callToAnswer.type}
             onEndCall={handleEndCall}
+            callId={activeCall?.callId || callToAnswer.id}
+            isCaller={!!activeCall}
+            offer={callToAnswer?.offer}
           />
         );
       default:
@@ -592,21 +661,8 @@ export default function AppShell() {
       {incomingCall && (
         <IncomingCallModal
           call={incomingCall}
-          onAccept={() => {
-            if(!incomingCall) return;
-            const callContact = incomingCall.contact;
-            const callType = incomingCall.type;
-            setIncomingCall(null);
-            handleStartCall(callContact, callType);
-          }}
-          onReject={() => {
-            if(!incomingCall) return;
-            toast({
-              title: "Call Rejected",
-              description: `You rejected the call from ${incomingCall.contact.name}.`,
-            });
-            setIncomingCall(null);
-          }}
+          onAccept={incomingCall.onAccept}
+          onReject={incomingCall.onReject}
         />
       )}
     </div>

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, getDoc, setDoc, DocumentReference } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 
@@ -18,6 +18,9 @@ interface CallViewProps {
   contact: Contact;
   type: 'video' | 'voice';
   onEndCall: () => void;
+  callId: string;
+  isCaller: boolean;
+  offer?: any;
 }
 
 const servers = {
@@ -106,7 +109,7 @@ const ParticipantAvatar = ({ participant, isAudioCall }: { participant: { name: 
 );
 
 
-export default function CallView({ user, contact, type, onEndCall }: CallViewProps) {
+export default function CallView({ user, contact, type, onEndCall, callId, isCaller, offer }: CallViewProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(type === 'voice');
   const [isVideoEnabled, setIsVideoEnabled] = useState(type === 'video');
@@ -120,12 +123,18 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   const isAudioCall = type === 'voice';
+  
+  // Using a ref to store the callDocRef to avoid re-creating it on every render
+  const callDocRef = useRef<DocumentReference | null>(null);
+  if (!callDocRef.current) {
+      callDocRef.current = doc(db, 'calls', callId);
+  }
+
 
   useEffect(() => {
-    let stream: MediaStream;
-    let callDocRef: any;
+    let localStreamInstance: MediaStream;
 
-    const startCall = async () => {
+    const setupPeerConnection = async () => {
         pc = new RTCPeerConnection(servers);
         
         const remote = new MediaStream();
@@ -138,13 +147,13 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         };
 
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ 
+            localStreamInstance = await navigator.mediaDevices.getUserMedia({ 
                 video: type === 'video',
                 audio: true,
             });
-            setLocalStream(stream);
-            stream.getTracks().forEach((track) => {
-                pc?.addTrack(track, stream);
+            setLocalStream(localStreamInstance);
+            localStreamInstance.getTracks().forEach((track) => {
+                pc?.addTrack(track, localStreamInstance);
             });
             setHasPermission(true);
         } catch (error) {
@@ -160,26 +169,29 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         }
 
         // --- Signaling Logic ---
-        const callId = [user.uid, contact.id].sort().join('_');
-        callDocRef = doc(db, 'calls', callId);
-        const offerCandidates = collection(callDocRef, 'offerCandidates');
-        const answerCandidates = collection(callDocRef, 'answerCandidates');
+        const candidatesCollection = collection(callDocRef.current, isCaller ? 'offerCandidates' : 'answerCandidates');
         
         pc.onicecandidate = event => {
-            event.candidate && addDoc(offerCandidates, event.candidate.toJSON());
+            event.candidate && addDoc(candidatesCollection, event.candidate.toJSON());
         };
+    };
 
+    const startCall = async () => {
+        await setupPeerConnection();
+        if (!pc || !callDocRef.current) return;
+        
         const offerDescription = await pc.createOffer();
         await pc.setLocalDescription(offerDescription);
 
-        const offer = {
+        const offerPayload = {
             sdp: offerDescription.sdp,
             type: offerDescription.type,
+            callerId: user.uid,
         };
 
-        await setDoc(callDocRef, { offer });
+        await setDoc(callDocRef.current, { offer: offerPayload });
 
-        onSnapshot(callDocRef, (snapshot) => {
+        onSnapshot(callDocRef.current, (snapshot) => {
             const data = snapshot.data();
             if (!pc?.currentRemoteDescription && data?.answer) {
                 const answerDescription = new RTCSessionDescription(data.answer);
@@ -187,6 +199,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
             }
         });
 
+        const answerCandidates = collection(callDocRef.current, 'answerCandidates');
         onSnapshot(answerCandidates, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'added') {
@@ -197,21 +210,55 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         });
     };
 
-    startCall();
+    const answerCall = async () => {
+        await setupPeerConnection();
+        if (!pc || !offer || !callDocRef.current) return;
+        
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        
+        const answerDescription = await pc.createAnswer();
+        await pc.setLocalDescription(answerDescription);
+        
+        const answerPayload = {
+            type: answerDescription.type,
+            sdp: answerDescription.sdp,
+        };
+        
+        await updateDoc(callDocRef.current, { answer: answerPayload });
+
+        const offerCandidates = collection(callDocRef.current, 'offerCandidates');
+        onSnapshot(offerCandidates, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') {
+                    const candidate = new RTCIceCandidate(change.doc.data());
+                    pc?.addIceCandidate(candidate);
+                }
+            });
+        });
+    };
+
+    if (isCaller) {
+        startCall();
+    } else {
+        answerCall();
+    }
 
     return () => {
-        localStream?.getTracks().forEach(track => track.stop());
+        localStreamInstance?.getTracks().forEach(track => track.stop());
         remoteStream?.getTracks().forEach(track => track.stop());
         if (pc) {
             pc.close();
             pc = null;
         }
-        if (callDocRef) {
-            deleteDoc(callDocRef);
+        if (callDocRef.current) {
+            // Only the caller should delete the doc to avoid race conditions
+            if (isCaller) {
+               deleteDoc(callDocRef.current);
+            }
         }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, user.uid, contact.id, onEndCall, toast]);
+  }, [type, user.uid, contact.id, toast]);
   
   
   useEffect(() => {

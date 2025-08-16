@@ -32,6 +32,8 @@ interface MainViewProps {
   onEnterSelectionMode: (contactId: string) => void;
   onExitSelectionMode: () => void;
   onDeleteSelectedChats: () => void;
+  updatesViewed: boolean;
+  onViewUpdates: () => void;
 }
 
 const formatContactTimestamp = (timestamp: any) => {
@@ -185,7 +187,8 @@ const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: 
 export default function MainView({ 
     user, contacts, updates, calls, onStartChat, onOpenAddFriend, onOpenProfile, 
     onAcceptRequest, onRejectRequest, onStartCall, isSelectionMode, selectedChats,
-    onToggleChatSelection, onEnterSelectionMode, onExitSelectionMode, onDeleteSelectedChats
+    onToggleChatSelection, onEnterSelectionMode, onExitSelectionMode, onDeleteSelectedChats,
+    updatesViewed, onViewUpdates
 }: MainViewProps) {
 
   const listContainerVariants = {
@@ -197,6 +200,8 @@ export default function MainView({
       },
     },
   };
+
+  const hasNewUpdates = updates.length > 0 && !updatesViewed;
   
   return (
     <div className="w-full h-full flex flex-col bg-background">
@@ -241,10 +246,13 @@ export default function MainView({
             </AnimatePresence>
         </div>
       </header>
-      <Tabs defaultValue="chats" className="w-full flex-grow flex flex-col">
+      <Tabs defaultValue="chats" className="w-full flex-grow flex flex-col" onValueChange={(value) => { if (value === 'updates') onViewUpdates() }}>
         <TabsList className="grid w-full grid-cols-3 rounded-none bg-header-bg p-0">
           <TabsTrigger value="chats" className="rounded-none text-icon-color/80 data-[state=active]:text-accent data-[state=active]:bg-header-bg data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--accent))]">Chats</TabsTrigger>
-          <TabsTrigger value="updates" className="rounded-none text-icon-color/80 data-[state=active]:text-accent data-[state=active]:bg-header-bg data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--accent))]">Updates</TabsTrigger>
+          <TabsTrigger value="updates" className="relative rounded-none text-icon-color/80 data-[state=active]:text-accent data-[state=active]:bg-header-bg data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--accent))]">
+            Updates
+            {hasNewUpdates && <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-accent" />}
+          </TabsTrigger>
           <TabsTrigger value="calls" className="rounded-none text-icon-color/80 data-[state=active]:text-accent data-[state=active]:bg-header-bg data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--accent))]">Calls</TabsTrigger>
         </TabsList>
         <div className="flex-grow overflow-hidden">

@@ -5,7 +5,7 @@ import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon, MicIcon } from '@/components/icons';
+import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon, MicIcon, CheckIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DropdownMenu,
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CameraIcon, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
+import { CameraIcon, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
@@ -121,33 +121,58 @@ const formatMessageTimestamp = (timestamp: any) => {
 };
 
 
-const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration }: Message & { isSent: boolean }) => (
-    <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
-        <div className={cn(
-            "relative max-w-xs lg:max-w-md px-1 py-1 rounded-lg shadow-md", 
-            isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none',
-            type === 'image' && 'p-1 bg-transparent shadow-none',
-            type === 'audio' && 'p-2'
-        )}>
-            {type === 'image' ? (
-                <div className="relative">
-                    <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
-                    <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{formatMessageTimestamp(timestamp)}</p>
-                </div>
-            ) : type === 'audio' ? (
-                <div className="flex items-end gap-2">
-                    <AudioPlayer src={text} duration={duration} />
-                    <p className="text-xs text-muted-foreground self-end pb-1">{formatMessageTimestamp(timestamp)}</p>
-                </div>
-            ) : (
-                <>
-                    <p className="text-sm text-foreground px-2 py-1">{text}</p>
-                    <p className="text-xs text-muted-foreground text-right mt-1 px-2">{formatMessageTimestamp(timestamp)}</p>
-                </>
-            )}
+const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, status }: Message & { isSent: boolean }) => {
+    const MessageStatus = () => {
+        if (!isSent) return null;
+        switch(status) {
+            case 'sent':
+                return <CheckIcon className="h-4 w-4 text-muted-foreground" />;
+            case 'delivered':
+                return <CheckCheck className="h-4 w-4 text-muted-foreground" />;
+            case 'seen':
+                return <CheckCheck className="h-4 w-4 text-blue-500" />;
+            default:
+                return <CheckIcon className="h-4 w-4 text-muted-foreground" />;
+        }
+    };
+    
+    return (
+        <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
+            <div className={cn(
+                "relative max-w-xs lg:max-w-md px-1 py-1 rounded-lg shadow-md", 
+                isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none',
+                type === 'image' && 'p-1 bg-transparent shadow-none',
+                type === 'audio' && 'p-2'
+            )}>
+                {type === 'image' ? (
+                    <div className="relative">
+                        <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
+                        <div className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                           <span>{formatMessageTimestamp(timestamp)}</span>
+                           <MessageStatus />
+                        </div>
+                    </div>
+                ) : type === 'audio' ? (
+                    <div className="flex items-end gap-2">
+                        <AudioPlayer src={text} duration={duration} />
+                        <div className="flex items-center gap-1 self-end pb-1">
+                           <p className="text-xs text-muted-foreground">{formatMessageTimestamp(timestamp)}</p>
+                           <MessageStatus />
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <p className="text-sm text-foreground px-2 py-1">{text}</p>
+                        <div className="flex justify-end items-center gap-1 mt-1 px-2">
+                            <p className="text-xs text-muted-foreground text-right">{formatMessageTimestamp(timestamp)}</p>
+                            <MessageStatus />
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duration: number) => void, onCancel: () => void }) => {
