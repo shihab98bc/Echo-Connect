@@ -424,11 +424,12 @@ export default function AppShell() {
             lastMessageText = finalContentUrl;
         }
 
-        const messagePayload: Omit<Message, 'id' | 'status'> = {
+        const messagePayload: Omit<Message, 'id'> = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
             type: type,
+            status: 'sent', // Initially sent
             caption: options.caption,
             duration: options.duration,
         };
@@ -438,43 +439,43 @@ export default function AppShell() {
         batch.set(newMessageRef, messagePayload);
 
         const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
-        const otherUserRef = doc(db, 'users', contactId);
         const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-
-        const [userContactSnap, otherUserSnap, otherUserContactSnap] = await Promise.all([
-            getDoc(userContactRef),
-            getDoc(otherUserRef),
-            getDoc(otherUserContactRef),
-        ]);
+        
+        const otherUserSnap = await getDoc(doc(db, 'users', contactId));
         const otherUserData = otherUserSnap.data() as AppUser;
 
-        const userContactData = {
-            id: contactId,
+
+        const contactUpdatePayload = {
+             lastMessage: lastMessageText,
+             timestamp: serverTimestamp(),
+        }
+
+        const currentUserContactUpdate = {
+            ...contactUpdatePayload,
             name: otherUserData.name,
             emoji: otherUserData.emoji,
             photoURL: otherUserData.photoURL,
-            lastMessage: lastMessageText,
-            timestamp: serverTimestamp(),
             isMuted: false,
+            unread: 0,
         };
-        batch.set(userContactRef, { ...userContactData, unread: 0 }, { merge: true });
+        batch.set(userContactRef, currentUserContactUpdate, { merge: true });
 
-        const otherUserContactData = {
-            id: currentUser.uid,
+        const otherUserContactUpdate = {
+            ...contactUpdatePayload,
             name: currentUser.name,
             emoji: currentUser.emoji,
             photoURL: currentUser.photoURL,
-            lastMessage: lastMessageText,
-            timestamp: serverTimestamp(),
             isMuted: false,
+            unread: increment(1),
         };
-        batch.set(otherUserContactRef, { ...otherUserContactData, unread: increment(1) }, { merge: true });
+        batch.set(otherUserContactRef, otherUserContactUpdate, { merge: true });
+
 
         await batch.commit();
 
         setMessages(prev => {
             const updatedContactMessages = prev[contactId].map(msg => 
-                msg.id === tempId ? { ...msg, id: newMessageRef.id, status: 'sent' } : msg
+                msg.id === tempId ? { ...msg, id: newMessageRef.id, text: finalContentUrl, status: 'sent' } : msg
             );
             return { ...prev, [contactId]: updatedContactMessages };
         });

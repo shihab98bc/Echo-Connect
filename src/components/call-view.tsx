@@ -183,7 +183,8 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             if(pc?.connectionState === 'connected') {
                 setIsCallConnected(true);
             } else if (pc?.connectionState === 'failed' || pc?.connectionState === 'disconnected' || pc?.connectionState === 'closed') {
-                handleEndCall();
+                // Don't auto-end call here, can be temporary
+                // handleEndCall();
             }
         };
         
