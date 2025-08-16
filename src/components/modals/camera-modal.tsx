@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { CameraIcon, Check, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
+import { CameraIcon, Check, Flashlight, FlashlightOff, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
@@ -23,13 +23,19 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [isFlashOn, setIsFlashOn] = useState(false);
+  const [hasFlash, setHasFlash] = useState(false);
 
   const cleanupCamera = useCallback(() => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        track.stop();
+      });
     }
     setStream(null);
     setPhotoDataUrl(null);
+    setHasFlash(false);
+    setIsFlashOn(false);
   }, [stream]);
 
   const getCameraStream = useCallback(async (front: boolean) => {
@@ -43,12 +49,23 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       });
       setStream(newStream);
       setHasPermission(true);
+
+      const videoTrack = newStream.getVideoTracks()[0];
+      const capabilities = videoTrack.getCapabilities();
+      // @ts-ignore
+      if (capabilities.torch) {
+        setHasFlash(true);
+      } else {
+        setHasFlash(false);
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
       setHasPermission(false);
+      setHasFlash(false);
       toast({
         variant: 'destructive',
         title: 'Camera Access Denied',
@@ -75,6 +92,26 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     getCameraStream(newIsFront);
   };
   
+  const handleToggleFlash = async () => {
+    if (!stream || !hasFlash) return;
+
+    const videoTrack = stream.getVideoTracks()[0];
+    try {
+        await videoTrack.applyConstraints({
+            // @ts-ignore
+            advanced: [{ torch: !isFlashOn }]
+        });
+        setIsFlashOn(!isFlashOn);
+    } catch (error) {
+        console.error('Error toggling flash:', error);
+        toast({
+            variant: 'destructive',
+            title: 'Flash Error',
+            description: 'Could not toggle the flashlight.',
+        });
+    }
+  };
+
   const handleCapture = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -83,6 +120,10 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
+        if(isFlashOn) {
+            // Turn off flash after capture
+            handleToggleFlash();
+        }
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         const dataUrl = canvas.toDataURL('image/jpeg');
         setPhotoDataUrl(dataUrl);
@@ -104,7 +145,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
           <DialogHeader className="sr-only">
-            <DialogTitle>Camera</DialogTitle>
+            <DialogTitle>Take a photo</DialogTitle>
           </DialogHeader>
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
             <AnimatePresence>
@@ -144,9 +185,15 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
               )}
             </AnimatePresence>
               
-              <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-4 left-4 bg-black/50 hover:bg-black/70 rounded-full">
+              <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-4 left-4 bg-black/50 hover:bg-black/70 rounded-full z-10">
                   <X className="w-6 h-6" />
               </Button>
+             
+              {!photoDataUrl && hasFlash && (
+                <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 rounded-full z-10">
+                    {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
+                </Button>
+              )}
           </div>
 
           <div className="p-4 flex items-center justify-center bg-black">
@@ -160,13 +207,13 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                   </div>
               ) : (
                   <div className="flex w-full justify-around items-center">
-                      <div className="w-16"></div>
+                      <div className="w-16 h-12"></div>
                       <Button 
                           onClick={handleCapture} 
                           className="w-20 h-20 rounded-full border-4 border-white bg-transparent hover:bg-white/20 active:bg-white/30"
                           disabled={!hasPermission}
                       />
-                      <Button variant="ghost" size="icon" onClick={handleSwitchCamera} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12">
+                      <Button variant="ghost" size="icon" onClick={handleSwitchCamera} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" disabled={!hasPermission}>
                           <SwitchCameraIcon className="w-6 h-6" />
                       </Button>
                   </div>
