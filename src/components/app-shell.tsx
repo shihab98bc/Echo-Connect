@@ -103,7 +103,7 @@ export default function AppShell() {
     setActiveCall(null);
     setCallToAnswer(null);
     setView(activeChat ? 'chat' : 'main');
-  }, [activeChat, setView]);
+  }, [activeChat, setView, setActiveCall, setCallToAnswer]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     // Clean up previous listeners just in case
@@ -306,7 +306,7 @@ export default function AppShell() {
         console.error("Error saving profile:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not save your profile.' });
     }
-  }, [setupFirestoreListeners, toast]);
+  }, [setupFirestoreListeners, toast, setCurrentUser, setProfileSetupOpen, setView]);
 
   const handleStartChat = useCallback(async (contact: Contact) => {
     if (!currentUser) return;
@@ -355,7 +355,7 @@ export default function AppShell() {
 
     setActiveChat(contact);
     setView('chat');
-}, [currentUser, toast, messages, setView]);
+}, [currentUser, messages, toast, setActiveChat, setView]);
 
   const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
@@ -458,7 +458,7 @@ export default function AppShell() {
         console.error("Error adding friend:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not send friend request.' });
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, setAddFriendOpen]);
 
   const handleAcceptRequest = useCallback(async (request: Update) => {
     if (!currentUser) return;
@@ -531,7 +531,7 @@ export default function AppShell() {
             description: 'An error occurred while signing out.',
         });
     }
-  }, [toast]);
+  }, [toast, setActiveChat, setActiveCall, setIncomingCall]);
 
   const handleStartCall = useCallback((contact: Contact, type: 'video' | 'voice') => {
     if (!currentUser) return;
@@ -544,7 +544,7 @@ export default function AppShell() {
     const callId = [currentUser.uid, contact.id].sort().join('_');
     setActiveCall({ contact, type, callId });
     setView('call');
-  }, [currentUser, toast]);
+  }, [currentUser, toast, setActiveCall, setView]);
   
   const handleClearChat = useCallback(async (contactId: string) => {
     if (!currentUser) return;
@@ -607,7 +607,7 @@ export default function AppShell() {
       console.error("Error deleting chat:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not delete chat.' });
     }
-  }, [currentUser, toast, activeChat]);
+  }, [currentUser, toast, activeChat, setMessages, setActiveChat, setView]);
 
   const handleToggleChatSelection = useCallback((contactId: string) => {
     setSelectedChats(prev => 
@@ -620,12 +620,12 @@ export default function AppShell() {
   const handleEnterSelectionMode = useCallback((contactId: string) => {
     setIsSelectionMode(true);
     setSelectedChats([contactId]);
-  }, []);
+  }, [setIsSelectionMode, setSelectedChats]);
 
   const handleExitSelectionMode = useCallback(() => {
     setIsSelectionMode(false);
     setSelectedChats([]);
-  }, []);
+  }, [setIsSelectionMode, setSelectedChats]);
 
   const handleDeleteSelectedChats = useCallback(async () => {
     if (!currentUser) return;
@@ -654,7 +654,7 @@ export default function AppShell() {
       }
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [setImageToSend, setImagePreviewOpen]);
 
   const handleSendImage = useCallback((caption: string) => {
     if (activeChat && imageToSend) {
@@ -662,7 +662,7 @@ export default function AppShell() {
     }
     setImagePreviewOpen(false);
     setImageToSend(null);
-  }, [activeChat, imageToSend, handleSendMessage]);
+  }, [activeChat, imageToSend, handleSendMessage, setImagePreviewOpen, setImageToSend]);
 
 
   const viewVariants = {
