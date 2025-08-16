@@ -218,7 +218,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
             setIsRecording(true);
             timerRef.current = setInterval(() => {
                 durationRef.current += 1;
-                setDuration(durationRef.current);
+                setDuration(d => d + 1);
             }, 1000);
         } catch (error) {
             console.error("Error starting recording:", error);
