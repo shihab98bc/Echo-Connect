@@ -12,6 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -30,9 +31,9 @@ interface ChatViewProps {
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
   onSendMessage: (contactId: string, message: string, type?: Message['type'], duration?: number) => void;
   onOpenProfile: () => void;
-  onToggleMute: (contactId: string) => void;
   onClearChat: (contactId: string) => void;
-  onBlockContact: (contactId: string) => void;
+  onBlockContact: (contactId: string, isBlocked: boolean) => void;
+  onDeleteChat: (contactId: string) => void;
   onOpenCamera: () => void;
 }
 
@@ -270,7 +271,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
 };
 
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute, onClearChat, onBlockContact, onOpenCamera }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onOpenCamera }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
@@ -283,13 +284,6 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       onSendMessage(contact.id, newMessage.trim());
       setNewMessage('');
     }
-  };
-
-  const handleFeatureNotImplemented = (feature: string) => {
-    toast({
-        title: "Feature not available",
-        description: `${feature} has not been implemented yet.`,
-    });
   };
   
   const handleAttachClick = () => {
@@ -316,10 +310,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         });
       }
     }
-    // Reset file input
-    if(e.target) {
-        e.target.value = '';
-    }
+    if(e.target) e.target.value = '';
   };
   
   const handleSendVoiceMessage = (dataUrl: string, duration: number) => {
@@ -336,6 +327,8 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         }
     }
   }, [messages]);
+  
+  const isContactBlocked = user.blocked ? user.blocked[contact.id] : false;
 
   return (
     <div className="w-full h-full flex flex-col bg-chat-pattern">
@@ -364,12 +357,12 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={onOpenProfile}>View Contact</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Search')}>Search</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onToggleMute(contact.id)}>
-                        {contact.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onClearChat(contact.id)}>Clear Chat</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive" onClick={() => onBlockContact(contact.id)}>Block</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBlockContact(contact.id, isContactBlocked)}>
+                        {isContactBlocked ? 'Unblock' : 'Block'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-destructive" onClick={() => onDeleteChat(contact.id)}>Delete Chat</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
@@ -397,13 +390,14 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                         placeholder="Type a message..." 
                         className="flex-grow rounded-full bg-white pr-24"
                         autoComplete="off"
+                        disabled={isContactBlocked}
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
+                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick} disabled={isContactBlocked}>
                             <Paperclip className="h-5 w-5" />
                         </Button>
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
+                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera} disabled={isContactBlocked}>
                             <CameraIcon className="h-5 w-5" />
                         </Button>
                     </div>
@@ -417,11 +411,11 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                         transition={{ duration: 0.2 }}
                     >
                         {newMessage ? (
-                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={handleSend}>
+                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={handleSend} disabled={isContactBlocked}>
                                 <SendIcon className="h-6 w-6 text-white" />
                             </Button>
                         ) : (
-                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => setIsRecording(true)}>
+                            <Button type="button" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => setIsRecording(true)} disabled={isContactBlocked}>
                                 <MicIcon className="h-6 w-6 text-white" />
                             </Button>
                         )}

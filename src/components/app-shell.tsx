@@ -15,8 +15,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db, storage } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment, deleteDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadString } from 'firebase/storage';
+import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment, deleteDoc, runTransaction } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadString, deleteObject } from 'firebase/storage';
 
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
@@ -100,6 +100,10 @@ export default function AppShell() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        // Cleanup listeners on any auth change
+        unsubscribeRefs.current.forEach(unsub => unsub());
+        unsubscribeRefs.current = [];
+
         if (firebaseUser) {
             const userDocRef = doc(db, 'users', firebaseUser.uid);
             const userDocSnap = await getDoc(userDocRef);
@@ -110,7 +114,6 @@ export default function AppShell() {
                 setView('main');
                 setupFirestoreListeners(userData.uid);
             } else {
-                // This is a new user, show profile setup
                 const tempUser: AppUser = {
                     uid: firebaseUser.uid,
                     name: firebaseUser.displayName || 'New User',
@@ -125,9 +128,6 @@ export default function AppShell() {
         } else {
             setCurrentUser(null);
             setView('auth');
-            // Cleanup listeners
-            unsubscribeRefs.current.forEach(unsub => unsub());
-            unsubscribeRefs.current = [];
             setContacts([]);
             setMessages({});
             setUpdates([]);
@@ -141,9 +141,18 @@ export default function AppShell() {
   }, []);
 
   const setupFirestoreListeners = (uid: string) => {
-    // Clean up previous listeners
+    // Clean up previous listeners just in case
     unsubscribeRefs.current.forEach(unsub => unsub());
     unsubscribeRefs.current = [];
+
+    // Listener for user document (for real-time updates to self)
+    const userDocRef = doc(db, 'users', uid);
+    const unsubUser = onSnapshot(userDocRef, (doc) => {
+        if(doc.exists()) {
+            setCurrentUser(doc.data() as AppUser);
+        }
+    });
+    unsubscribeRefs.current.push(unsubUser);
 
     // Listener for contacts
     const contactsRef = collection(db, 'users', uid, 'contacts');
@@ -152,7 +161,7 @@ export default function AppShell() {
         const contactsData = snapshot.docs.map(doc => doc.data() as Contact);
         setContacts(contactsData);
 
-        // For each contact, listen to messages and update message status
+        // For each contact, listen to messages
         contactsData.forEach(contact => {
           const chatId = [uid, contact.id].sort().join('_');
           const messagesRef = collection(db, 'chats', chatId, 'messages');
@@ -162,24 +171,17 @@ export default function AppShell() {
             const newMessages = msgSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Message));
             setMessages(prev => ({ ...prev, [contact.id]: newMessages }));
             
+            // Mark received messages as 'delivered'
             const batch = writeBatch(db);
             let hasUpdates = false;
             newMessages.forEach(msg => {
-                // Mark received messages as 'delivered' if not already seen
                 if (msg.sender !== uid && msg.status === 'sent') {
                     const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
                     batch.update(msgRef, { status: 'delivered' });
                     hasUpdates = true;
                 }
-                // If the chat is currently active, mark as 'seen'
-                if (activeChat && activeChat.id === contact.id && msg.sender !== uid && msg.status !== 'seen') {
-                    const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
-                    batch.update(msgRef, { status: 'seen' });
-                    hasUpdates = true;
-                }
             });
             if(hasUpdates) batch.commit();
-
           });
           unsubscribeRefs.current.push(unsubMessages);
         });
@@ -253,10 +255,10 @@ export default function AppShell() {
             emoji,
             email: firebaseUser.email,
             photoURL: firebaseUser.photoURL,
+            blocked: {},
         };
         await setDoc(doc(db, 'users', firebaseUser.uid), userPayload);
         
-        // Add welcome bot
         const welcomeBotContact = {
             id: 'welcome-bot',
             name: 'EchoConnect Bot',
@@ -271,7 +273,7 @@ export default function AppShell() {
         const chatId = [firebaseUser.uid, 'welcome-bot'].sort().join('_');
         const welcomeMessage = {
             sender: 'welcome-bot',
-            text: "Welcome to EchoConnect! To add a friend, click the icon in the top right. You can find your own user ID in your profile. Share it with friends to connect!",
+            text: "Welcome to EchoConnect! You can find your user ID in your profile. Share it with friends to connect!",
             timestamp: serverTimestamp(),
             type: 'text',
             status: 'sent'
@@ -292,6 +294,22 @@ export default function AppShell() {
 
   const handleStartChat = async (contact: Contact) => {
     if (!currentUser) return;
+
+    if (currentUser.blocked && currentUser.blocked[contact.id]) {
+      toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked ${contact.name}. Unblock them to chat.` });
+      return;
+    }
+
+    const contactDocRef = doc(db, 'users', contact.id);
+    const contactDoc = await getDoc(contactDocRef);
+    if(contactDoc.exists()){
+      const contactData = contactDoc.data() as AppUser;
+      if (contactData.blocked && contactData.blocked[currentUser.uid]) {
+        toast({ variant: 'destructive', title: 'Blocked', description: `You cannot message this user.` });
+        return;
+      }
+    }
+    
     // Mark messages as read
      if (contact.unread > 0) {
       const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
@@ -346,11 +364,14 @@ export default function AppShell() {
       await updateDoc(userContactRef, { lastMessage: lastMessageText, timestamp });
 
       const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-      await updateDoc(otherUserContactRef, { 
-        lastMessage: lastMessageText, 
-        timestamp,
-        unread: increment(1)
-      });
+      const otherUserDoc = await getDoc(otherUserContactRef);
+      if(otherUserDoc.exists()){
+        await updateDoc(otherUserContactRef, { 
+          lastMessage: lastMessageText, 
+          timestamp,
+          unread: increment(1)
+        });
+      }
 
     } catch (error) {
         console.error("Error sending message:", error);
@@ -376,15 +397,18 @@ export default function AppShell() {
 
         const friendDoc = querySnapshot.docs[0];
         const friendData = friendDoc.data() as AppUser;
+        
+        if (currentUser.blocked && currentUser.blocked[friendData.uid]) {
+             toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked this user. Unblock them to add as a friend.` });
+             return;
+        }
 
-        // Check if already a contact
         const contactDoc = await getDoc(doc(db, 'users', currentUser.uid, 'contacts', friendData.uid));
         if (contactDoc.exists()) {
              toast({ variant: 'destructive', title: 'Already Friends', description: `You are already connected with ${friendData.name}.` });
              return;
         }
         
-        // Send friend request
         const requestRef = doc(db, 'users', friendData.uid, 'friendRequests', currentUser.uid);
         await setDoc(requestRef, {
             id: currentUser.uid,
@@ -414,7 +438,6 @@ export default function AppShell() {
     const batch = writeBatch(db);
     const requestFromUser = request.from;
 
-    // 1. Add contact to current user's contacts
     const currentUserContactRef = doc(db, 'users', currentUser.uid, 'contacts', requestFromUser.id);
     batch.set(currentUserContactRef, {
         id: requestFromUser.id,
@@ -426,7 +449,6 @@ export default function AppShell() {
         isMuted: false,
     });
 
-    // 2. Add current user to the other user's contacts
     const otherUserContactRef = doc(db, 'users', requestFromUser.id, 'contacts', currentUser.uid);
     batch.set(otherUserContactRef, {
         id: currentUser.uid,
@@ -438,7 +460,6 @@ export default function AppShell() {
         isMuted: false,
     });
     
-    // 3. Delete the friend request
     const requestRef = doc(db, 'users', currentUser.uid, 'friendRequests', requestFromUser.id);
     batch.delete(requestRef);
 
@@ -486,6 +507,12 @@ export default function AppShell() {
 
   const handleStartCall = (contact: Contact, type: 'video' | 'voice') => {
     if (!currentUser) return;
+
+    if (currentUser.blocked && currentUser.blocked[contact.id]) {
+      toast({ variant: 'destructive', title: 'User Blocked', description: `You cannot call a blocked user.` });
+      return;
+    }
+
     const callId = [currentUser.uid, contact.id].sort().join('_');
     setActiveCall({ contact, type, callId });
     setView('call');
@@ -496,28 +523,70 @@ export default function AppShell() {
     setCallToAnswer(null);
     setView(activeChat ? 'chat' : 'main');
   };
+  
+  const handleClearChat = async (contactId: string) => {
+    if (!currentUser) return;
+    const chatId = [currentUser.uid, contactId].sort().join('_');
+    const messagesRef = collection(db, 'chats', chatId, 'messages');
+    try {
+      const messagesSnapshot = await getDocs(messagesRef);
+      if (messagesSnapshot.empty) {
+        toast({ title: "Chat already empty." });
+        return;
+      }
+      const batch = writeBatch(db);
+      messagesSnapshot.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
 
-  const handleToggleMute = (contactId: string) => {
-    // This would update the contact in Firestore in a real app
-    toast({
-        title: "Feature coming soon",
-        description: `Muting notifications will be available in a future update.`,
-    });
+      const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+      await updateDoc(userContactRef, { lastMessage: "", timestamp: serverTimestamp() });
+      
+      toast({ title: "Chat cleared successfully." });
+    } catch(error) {
+      console.error("Error clearing chat", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not clear chat.' });
+    }
   };
 
-  const handleClearChat = (contactId: string) => {
-    toast({
-        title: "Feature coming soon",
-        description: `Clearing chat history will be available in a future update.`,
-    });
+  const handleBlockContact = async (contactId: string, isBlocked: boolean) => {
+    if (!currentUser) return;
+    const userRef = doc(db, 'users', currentUser.uid);
+
+    try {
+        await updateDoc(userRef, {
+            [`blocked.${contactId}`]: !isBlocked
+        });
+        toast({ title: isBlocked ? 'User unblocked' : 'User blocked' });
+    } catch(error) {
+        console.error("Error blocking contact:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not update block status.' });
+    }
+  };
+  
+  const handleDeleteChat = async (contactId: string) => {
+    if(!currentUser) return;
+    const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+    try {
+      await deleteDoc(contactRef);
+      // Also delete messages
+      setMessages(prev => {
+        const newMessages = {...prev};
+        delete newMessages[contactId];
+        return newMessages;
+      });
+      toast({ title: "Chat deleted" });
+      if (activeChat?.id === contactId) {
+        setActiveChat(null);
+        setView('main');
+      }
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not delete chat.' });
+    }
   };
 
-  const handleBlockContact = (contactId: string) => {
-    toast({
-        title: "Feature coming soon",
-        description: `Blocking contacts will be available in a future update.`,
-    });
-  };
 
   const handleToggleChatSelection = (contactId: string) => {
     setSelectedChats(prev => 
@@ -537,11 +606,20 @@ export default function AppShell() {
     setSelectedChats([]);
   };
 
-  const handleDeleteSelectedChats = () => {
-    toast({
-        title: "Feature coming soon",
-        description: `Deleting chats will be available in a future update.`,
+  const handleDeleteSelectedChats = async () => {
+    if (!currentUser) return;
+    const batch = writeBatch(db);
+    selectedChats.forEach(contactId => {
+        const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+        batch.delete(contactRef);
     });
+    try {
+        await batch.commit();
+        toast({ title: `${selectedChats.length} chat(s) deleted.`});
+    } catch(err) {
+        console.error("Error deleting chats:", err);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not delete selected chats.' });
+    }
     handleExitSelectionMode();
   };
 
@@ -614,9 +692,9 @@ export default function AppShell() {
             onStartCall={handleStartCall}
             onSendMessage={handleSendMessage}
             onOpenProfile={() => setProfileViewOpen(true)}
-            onToggleMute={handleToggleMute}
             onClearChat={handleClearChat}
             onBlockContact={handleBlockContact}
+            onDeleteChat={handleDeleteChat}
             onOpenCamera={() => setCameraOpen(true)}
           />
         );
