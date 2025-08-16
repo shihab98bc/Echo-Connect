@@ -9,14 +9,23 @@ import ProfileSetupModal from '@/components/modals/profile-setup-modal';
 import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
-import SecurityModal from '@/components/modals/security-modal'; // Import the new modal
+import SecurityModal from '@/components/modals/security-modal';
 import CameraModal from '@/components/modals/camera-modal';
-import { mockUser, mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
+import { mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
-export type AppUser = typeof mockUser;
+export type AppUser = {
+  uid: string;
+  name: string | null;
+  emoji: string;
+  id: string | null;
+  photoURL: string | null;
+  blocked: Record<string, boolean>;
+};
 export type Contact = (typeof initialContacts)[0];
 export type Call = (typeof mockCalls)[0];
 export type Update = (typeof initialUpdates)[0];
@@ -25,7 +34,7 @@ export type Message = { sender: string; text: string; timestamp: string, type?: 
 
 export default function AppShell() {
   const [view, setView] = useState<View>('auth');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const { toast } = useToast();
 
   // State for modals
@@ -41,7 +50,6 @@ export default function AppShell() {
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice' } | null>(null);
 
   // State for data
-  const [user, setUser] = useState(mockUser);
   const [contacts, setContacts] = useState(initialContacts);
   const [updates, setUpdates] = useState(initialUpdates);
   const [messages, setMessages] = useState(initialMessages);
@@ -50,33 +58,65 @@ export default function AppShell() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedChats, setSelectedChats] = useState<string[]>([]);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+        if (firebaseUser) {
+            const isNewUser = !firebaseUser.displayName;
+            const appUser: AppUser = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName,
+                emoji: '😎', // Default emoji, can be changed in profile setup
+                id: firebaseUser.email,
+                photoURL: firebaseUser.photoURL,
+                blocked: {}, // Load from DB in a real app
+            };
+            setCurrentUser(appUser);
+            
+            if (isNewUser) {
+                setProfileSetupOpen(true);
+            } else {
+                setView('main');
+            }
+        } else {
+            setCurrentUser(null);
+            setView('auth');
+        }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+
   const handleLogin = () => {
-    setIsAuthenticated(true);
-    const isNewUser = !user.name;
-    if (isNewUser) {
-      setProfileSetupOpen(true);
-    } else {
-      setView('main');
-    }
+    // onAuthStateChanged will handle the view change
   };
 
   const handleSignup = () => {
-    setIsAuthenticated(true);
-    setProfileSetupOpen(true);
+    // onAuthStateChanged will handle the view change and open profile setup
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setView('auth');
-    setActiveChat(null);
-    setActiveCall(null);
-    setIncomingCall(null);
+  const handleLogout = async () => {
+    try {
+        await signOut(auth);
+        setActiveChat(null);
+        setActiveCall(null);
+        setIncomingCall(null);
+    } catch (error) {
+        toast({
+            variant: 'destructive',
+            title: 'Logout Failed',
+            description: 'An error occurred while signing out.',
+        });
+    }
   };
 
   const handleProfileSave = (name: string, emoji: string) => {
-    setUser(prev => ({...prev, name, emoji}));
-    setProfileSetupOpen(false);
-    setView('main');
+    if (currentUser) {
+        // In a real app, update the user profile in Firebase Auth and your database
+        setCurrentUser(prev => prev ? ({...prev, name, emoji}) : null);
+        setProfileSetupOpen(false);
+        setView('main');
+    }
   };
 
   const handleStartChat = (contact: Contact) => {
@@ -100,8 +140,9 @@ export default function AppShell() {
   };
 
   const handleSendMessage = (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
+    if (!currentUser) return;
     const message: Message = {
-      sender: user.uid,
+      sender: currentUser.uid,
       text: messageText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       type: type,
@@ -175,12 +216,12 @@ export default function AppShell() {
 
   const handleBlockContact = (contactId: string) => {
     const contact = contacts.find(c => c.id === contactId);
-    if (!contact) return;
+    if (!contact || !currentUser) return;
 
-    setUser(prevUser => ({
+    setCurrentUser(prevUser => prevUser ? ({
         ...prevUser,
         blocked: { ...prevUser.blocked, [contactId]: true }
-    }));
+    }) : null);
     
     setActiveChat(null);
     setView('main');
@@ -260,38 +301,30 @@ export default function AppShell() {
   };
 
 
-  // Simulate receiving an incoming call for demo purposes
-  /*
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (isAuthenticated && !incomingCall && !activeCall) {
-        const nextCall = mockCalls.find(c => c.status === 'incoming' && c.id === 'call3');
-        if (nextCall) {
-            setIncomingCall(nextCall);
-        }
-      }
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, incomingCall, activeCall]);
-  */
-
-
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
     enter: { opacity: 1, x: 0 },
     exit: { opacity: 0, x: -30 },
   };
 
-  const visibleContacts = contacts.filter(c => !user.blocked[c.id]);
+  if (!currentUser) {
+      return (
+        <div id="app-container" className="w-full max-w-[450px] h-[95vh] max-h-[950px] bg-background shadow-wa rounded-lg overflow-hidden flex flex-col relative transition-all duration-300">
+            <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />
+        </div>
+      );
+  }
+
+  const visibleContacts = contacts.filter(c => !currentUser.blocked[c.id]);
 
   const renderView = () => {
     switch (view) {
       case 'auth':
-        return <AuthView onLogin={handleLogin} onSignup={handleSignup} />;
+        return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />;
       case 'main':
         return (
           <MainView
-            user={user}
+            user={currentUser}
             contacts={visibleContacts}
             updates={updates}
             calls={mockCalls}
@@ -313,7 +346,7 @@ export default function AppShell() {
         if (!activeChat) return null;
         return (
           <ChatView
-            user={user}
+            user={currentUser}
             contact={activeChat}
             messages={messages[activeChat.id] || []}
             onBack={() => {
@@ -333,14 +366,14 @@ export default function AppShell() {
         if (!activeCall) return null;
         return (
           <CallView
-            user={user}
+            user={currentUser}
             contact={activeCall.contact}
             type={activeCall.type}
             onEndCall={handleEndCall}
           />
         );
       default:
-        return <AuthView onLogin={handleLogin} onSignup={handleSignup} />;
+        return <AuthView onLogin={handleLogin} onSignup={handleSignup} onGoogleSignIn={handleLogin} />;
     }
   };
 
@@ -377,7 +410,7 @@ export default function AppShell() {
       <ProfileViewModal 
         isOpen={isProfileViewOpen} 
         onClose={() => setProfileViewOpen(false)} 
-        user={user} 
+        user={currentUser} 
         onLogout={handleLogout} 
         onOpenSecurity={() => {
           setProfileViewOpen(false);

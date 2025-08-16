@@ -3,7 +3,7 @@
 import type { AppUser } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { summarizeUserActivity } from '@/app/actions';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -55,6 +55,7 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOp
         <DialogHeader>
           <div className="flex flex-col items-center gap-4 text-center">
             <Avatar className="h-24 w-24 text-6xl">
+              {user.photoURL ? <AvatarImage src={user.photoURL} alt={user.name || ''} /> : null}
               <AvatarFallback>{user.emoji}</AvatarFallback>
             </Avatar>
             <div>
