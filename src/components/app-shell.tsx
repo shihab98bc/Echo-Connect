@@ -11,7 +11,7 @@ import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
 import SecurityModal from '@/components/modals/security-modal';
 import CameraModal from '@/components/modals/camera-modal';
-import { mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
+import { mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls, mockUser } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
@@ -77,6 +77,7 @@ export default function AppShell() {
             } else {
                 setContacts(initialContacts);
                 setMessages(initialMessages);
+                setUpdates(initialUpdates);
                 setView('main');
             }
         } else {
@@ -84,6 +85,7 @@ export default function AppShell() {
             setView('auth');
             setContacts([]);
             setMessages({});
+            setUpdates([]);
         }
     });
 
@@ -135,6 +137,7 @@ export default function AppShell() {
 
         setContacts([welcomeContact]);
         setMessages({ [welcomeBotId]: [welcomeMessage]});
+        setUpdates(initialUpdates);
 
         // In a real app, update the user profile in Firebase Auth and your database
         setCurrentUser(prev => prev ? ({...prev, name, emoji}) : null);
@@ -255,6 +258,30 @@ export default function AppShell() {
         description: `You have blocked ${contact.name}.`,
     });
   };
+  
+  const handleAddFriend = (friendId: string) => {
+    if (!currentUser) return;
+    // For demonstration, we'll create a new mock request in the updates list.
+    // In a real app, this would send a request to a server.
+    const newRequest: Update = {
+      id: `req_${Date.now()}`,
+      type: 'request',
+      from: {
+        id: friendId, // In a real app, you'd fetch this user's data
+        name: friendId,
+        emoji: '👋',
+      },
+    };
+
+    setUpdates(prev => [newRequest, ...prev]);
+    
+    toast({
+        title: "Friend Request Sent",
+        description: `Your request to ${friendId} has been sent. A sample request has been added to your Updates tab for you to try.`,
+    });
+    setAddFriendOpen(false);
+  };
+
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
@@ -418,19 +445,11 @@ export default function AppShell() {
       </AnimatePresence>
 
       <ProfileSetupModal isOpen={isProfileSetupOpen} onSave={handleProfileSave} />
-      <AddFriendModal isOpen={isAddFriendOpen} onClose={() => setAddFriendOpen(false)} onAddFriend={(name) => {
-        const newContact = {
-          id: `user${contacts.length + 10}`,
-          name,
-          emoji: '👋',
-          lastMessage: 'Say hi!',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          unread: 0,
-          isMuted: false,
-        };
-        setContacts(prev => [newContact, ...prev]);
-        setAddFriendOpen(false);
-      }} />
+      <AddFriendModal 
+        isOpen={isAddFriendOpen} 
+        onClose={() => setAddFriendOpen(false)} 
+        onAddFriend={handleAddFriend}
+      />
       <ProfileViewModal 
         isOpen={isProfileViewOpen} 
         onClose={() => setProfileViewOpen(false)} 
@@ -452,17 +471,19 @@ export default function AppShell() {
         <IncomingCallModal
           call={incomingCall}
           onAccept={() => {
+            if(!incomingCall) return;
             const callContact = incomingCall.contact;
             const callType = incomingCall.type;
             setIncomingCall(null);
             handleStartCall(callContact, callType);
           }}
           onReject={() => {
-            setIncomingCall(null);
+            if(!incomingCall) return;
             toast({
               title: "Call Rejected",
               description: `You rejected the call from ${incomingCall.contact.name}.`,
             });
+            setIncomingCall(null);
           }}
         />
       )}

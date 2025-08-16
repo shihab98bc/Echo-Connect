@@ -45,7 +45,6 @@ export const mockContacts = [
             { id: 'user6', name: 'Eva Chen', emoji: '💡' },
         ]
     },
-    { id: 'user7', name: 'Dr. Evelyn Reed', emoji: '🔬', lastMessage: 'Say hi!', timestamp: '05:27 PM', unread: 0, isMuted: false },
 ];
 
 export const mockMessages: Record<string, { sender: string; text: string; timestamp: string, type?: 'text' | 'image' | 'audio', duration?: number }[]> = {
@@ -80,6 +79,11 @@ export const mockMessages: Record<string, { sender: string; text: string; timest
 };
   
 export const mockUpdates = [
+    { 
+        id: 'update1', 
+        type: 'request' as const, 
+        from: { id: 'user7', name: 'Dr. Evelyn Reed', emoji: '🔬' }
+    },
     { id: 'update2', type: 'info' as const, message: 'End-to-end encryption is enabled for all chats.' },
 ];
   

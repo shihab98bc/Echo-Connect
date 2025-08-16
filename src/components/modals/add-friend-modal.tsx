@@ -5,27 +5,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
 
 interface AddFriendModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddFriend: (name: string) => void;
+  onAddFriend: (id: string) => void;
 }
 
 export default function AddFriendModal({ isOpen, onClose, onAddFriend }: AddFriendModalProps) {
   const [friendId, setFriendId] = useState('');
-  const { toast } = useToast();
 
   const handleAddFriend = () => {
     if (friendId.trim()) {
-      onAddFriend(friendId);
-      toast({
-        title: "Friend Request Sent",
-        description: `Your request to ${friendId} has been sent.`,
-      });
-      onClose();
+      onAddFriend(friendId.trim());
       setFriendId('');
+      onClose();
     }
   };
 
