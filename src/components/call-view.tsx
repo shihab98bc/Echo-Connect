@@ -119,16 +119,20 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [isCallConnected, setIsCallConnected] = useState(false);
 
   const localVideoContainerRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   const isAudioCall = type === 'voice';
   
   const callDocRef = useRef<DocumentReference | null>(doc(db, 'calls', callId));
 
   useEffect(() => {
-    const handleEndCall = async (isError = false) => {
+    const handleEndCallCleanup = async (isError = false) => {
+        if (durationTimerRef.current) clearInterval(durationTimerRef.current);
         pc?.close();
         pc = null;
         localStreamInstance?.getTracks().forEach(track => track.stop());
@@ -146,6 +150,14 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     const setupAndStartCall = async () => {
         pc = new RTCPeerConnection(servers);
 
+        pc.onconnectionstatechange = () => {
+            if(pc?.connectionState === 'connected') {
+                setIsCallConnected(true);
+            } else if (pc?.connectionState === 'failed' || pc?.connectionState === 'disconnected' || pc?.connectionState === 'closed') {
+                handleEndCallCleanup();
+            }
+        }
+
         try {
             localStreamInstance = await navigator.mediaDevices.getUserMedia({
                 video: type === 'video',
@@ -161,7 +173,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 title: 'Media Access Denied',
                 description: 'Please enable camera and microphone permissions.',
             });
-            handleEndCall(true);
+            handleEndCallCleanup(true);
             return;
         }
 
@@ -232,21 +244,22 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             if (unsub) unsub();
         });
         
-        pc?.close();
-        pc = null;
-        localStreamInstance?.getTracks().forEach(track => track.stop());
-        localStreamInstance = null;
-        setLocalStream(null);
-        setRemoteStream(null);
-
-        if (callDocRef.current && isCaller) {
-            getDoc(callDocRef.current).then(docSnap => {
-                if (docSnap.exists()) deleteDoc(callDocRef.current!);
-            })
-        }
+        handleEndCallCleanup();
     };
   }, [type, user.uid, callId, isCaller, offer, toast, onEndCall]);
   
+  useEffect(() => {
+    if (isCallConnected) {
+      durationTimerRef.current = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+        if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    }
+    return () => {
+      if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    };
+  }, [isCallConnected]);
   
   useEffect(() => {
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
@@ -307,7 +320,8 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     toast({ title: isSpeakerOn ? 'Speaker Off' : 'Speaker On'});
   };
 
-  const handleEndCall = async (isError = false) => {
+  const handleEndCall = async () => {
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     pc?.close();
     pc = null;
     localStreamInstance?.getTracks().forEach(track => track.stop());
@@ -315,12 +329,18 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     setLocalStream(null);
     setRemoteStream(null);
     
-    if (callDocRef.current && !isError) {
+    if (callDocRef.current) {
          const docSnap = await getDoc(callDocRef.current);
          if (docSnap.exists()) await deleteDoc(callDocRef.current);
     }
     onEndCall();
   };
+
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
 
   return (
     <div className="absolute inset-0 bg-gray-900 text-white flex flex-col z-50 overflow-hidden" onClick={toggleControls}>
@@ -350,7 +370,9 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}
             >
                 <h2 className="text-3xl font-bold font-headline text-shadow">{contact.name}</h2>
-                <p className="text-lg text-white/80 text-shadow">{isAudioCall ? 'Calling...' : 'Video Call'}</p>
+                 <p className="text-lg text-white/80 text-shadow">
+                    {isCallConnected ? formatDuration(callDuration) : isAudioCall ? 'Calling...' : 'Connecting...'}
+                </p>
             </motion.div>
         )}
         </AnimatePresence>

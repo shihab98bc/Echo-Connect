@@ -158,9 +158,10 @@ export default function AppShell() {
     const callDocsRef = collection(db, 'calls');
     const unsubCalls = onSnapshot(callDocsRef, async (snapshot) => {
         for (const change of snapshot.docChanges()) {
+            const callData = change.doc.data();
+            const callId = change.doc.id;
+
             if (change.type === 'added') {
-                const callData = change.doc.data();
-                const callId = change.doc.id;
                 const calleeId = callId.split('_').find(id => id !== callData.offer.callerId);
                 
                 if (calleeId === uid && !callData.answer) {
@@ -194,11 +195,20 @@ export default function AppShell() {
                         });
                     }
                 }
+            } else if (change.type === 'removed') {
+              // If the call document is removed, it means the other user ended or rejected the call.
+              if (incomingCall && incomingCall.id === callId) {
+                setIncomingCall(null);
+              }
+              if ((activeCall && activeCall.callId === callId) || (callToAnswer && callToAnswer.id === callId)) {
+                handleEndCall();
+                toast({ title: 'Call Ended', description: 'The other user has ended the call.' });
+              }
             }
         }
     });
     unsubscribeRefs.current.push(unsubCalls);
-  }, []);
+  }, [toast, incomingCall, activeCall, callToAnswer]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
