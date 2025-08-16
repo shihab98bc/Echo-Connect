@@ -16,6 +16,9 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CameraIcon, Paperclip } from 'lucide-react';
+import Image from 'next/image';
+import { cn } from '@/lib/utils';
+
 
 interface ChatViewProps {
   user: AppUser;
@@ -28,18 +31,32 @@ interface ChatViewProps {
   onToggleMute: (contactId: string) => void;
   onClearChat: (contactId: string) => void;
   onBlockContact: (contactId: string) => void;
+  onOpenCamera: () => void;
 }
 
-const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: string; isSent: boolean }) => (
-    <div className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}>
-        <div className={`relative max-w-xs lg:max-w-md px-3 py-2 rounded-lg shadow-md ${isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none'}`}>
-            <p className="text-sm text-foreground">{text}</p>
-            <p className="text-xs text-muted-foreground text-right mt-1">{timestamp}</p>
+const MessageBubble = ({ text, timestamp, isSent, type = 'text' }: { text: string; timestamp: string; isSent: boolean; type?: 'text' | 'image' }) => (
+    <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
+        <div className={cn(
+            "relative max-w-xs lg:max-w-md px-1 py-1 rounded-lg shadow-md", 
+            isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none',
+            type === 'image' && 'p-1 bg-transparent shadow-none'
+        )}>
+            {type === 'image' ? (
+                <div className="relative">
+                    <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md" />
+                    <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{timestamp}</p>
+                </div>
+            ) : (
+                <>
+                    <p className="text-sm text-foreground px-2 py-1">{text}</p>
+                    <p className="text-xs text-muted-foreground text-right mt-1 px-2">{timestamp}</p>
+                </>
+            )}
         </div>
     </div>
 );
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute, onClearChat, onBlockContact }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute, onClearChat, onBlockContact, onOpenCamera }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -109,7 +126,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((msg, index) => (
-            <MessageBubble key={index} text={msg.text} timestamp={msg.timestamp} isSent={msg.sender === user.uid} />
+            <MessageBubble key={index} text={msg.text} timestamp={msg.timestamp} isSent={msg.sender === user.uid} type={msg.type} />
           ))}
         </div>
       </ScrollArea>
@@ -128,7 +145,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => handleFeatureNotImplemented('Attach file')}>
                     <Paperclip className="h-5 w-5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => handleFeatureNotImplemented('Take photo')}>
+                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
                     <CameraIcon className="h-5 w-5" />
                 </Button>
             </div>
@@ -156,3 +173,5 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     </div>
   );
 }
+
+    

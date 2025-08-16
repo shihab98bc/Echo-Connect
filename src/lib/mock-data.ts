@@ -48,34 +48,34 @@ export const mockContacts = [
     { id: 'user7', name: 'Dr. Evelyn Reed', emoji: '🔬', lastMessage: 'Say hi!', timestamp: '05:27 PM', unread: 0, isMuted: false },
 ];
 
-export const mockMessages: Record<string, { sender: string; text: string; timestamp: string }[]> = {
+export const mockMessages: Record<string, { sender: string; text: string; timestamp: string, type?: 'text' | 'image' }[]> = {
     user2: [
-        { sender: 'user2', text: 'Hey Alex, how are you?', timestamp: '10:40 AM' },
-        { sender: 'user1', text: 'I\'m good, Zoe! Just working on the new design. How about you?', timestamp: '10:42 AM' },
-        { sender: 'user2', text: 'Same here, getting ready for the presentation.', timestamp: '10:45 AM' },
-        { sender: 'user2', text: 'Just wanted to confirm our meeting for tomorrow at 2 PM.', timestamp: '10:46 AM' },
-        { sender: 'user1', text: 'Yep, confirmed! I\'ll have the mockups ready.', timestamp: '10:47 AM' },
-        { sender: 'user2', text: 'Great. See you tomorrow!', timestamp: '10:48 AM' },
+        { sender: 'user2', text: 'Hey Alex, how are you?', timestamp: '10:40 AM', type: 'text' },
+        { sender: 'user1', text: 'I\'m good, Zoe! Just working on the new design. How about you?', timestamp: '10:42 AM', type: 'text' },
+        { sender: 'user2', text: 'Same here, getting ready for the presentation.', timestamp: '10:45 AM', type: 'text' },
+        { sender: 'user2', text: 'Just wanted to confirm our meeting for tomorrow at 2 PM.', timestamp: '10:46 AM', type: 'text' },
+        { sender: 'user1', text: 'Yep, confirmed! I\'ll have the mockups ready.', timestamp: '10:47 AM', type: 'text' },
+        { sender: 'user2', text: 'Great. See you tomorrow!', timestamp: '10:48 AM', type: 'text' },
     ],
     user3: [
-        { sender: 'user3', text: 'The project is looking great. Good job!', timestamp: '9:15 AM' },
+        { sender: 'user3', text: 'The project is looking great. Good job!', timestamp: '9:15 AM', type: 'text' },
     ],
     user4: [
-        { sender: 'user4', text: 'Can you send me the file?', timestamp: 'Yesterday' },
+        { sender: 'user4', text: 'Can you send me the file?', timestamp: 'Yesterday', type: 'text' },
     ],
     user5: [
-        { sender: 'user1', text: 'Hey, are we on for practice?', timestamp: 'Yesterday' },
-        { sender: 'user5', text: 'Let\'s practice this weekend.', timestamp: 'Yesterday' },
+        { sender: 'user1', text: 'Hey, are we on for practice?', timestamp: 'Yesterday', type: 'text' },
+        { sender: 'user5', text: 'Let\'s practice this weekend.', timestamp: 'Yesterday', type: 'text' },
     ],
     group1: [
-        { sender: 'user2', text: 'Hey team, the new mockups are ready for review!', timestamp: '11:25 AM' },
-        { sender: 'user4', text: 'Awesome, I\'ll take a look now.', timestamp: '11:26 AM' },
-        { sender: 'user1', text: 'Looking good Zoe!', timestamp: '11:28 AM' },
-        { sender: 'user3', text: 'Let\'s sync up at 3 PM to discuss feedback.', timestamp: '11:30 AM' },
+        { sender: 'user2', text: 'Hey team, the new mockups are ready for review!', timestamp: '11:25 AM', type: 'text' },
+        { sender: 'user4', text: 'Awesome, I\'ll take a look now.', timestamp: '11:26 AM', type: 'text' },
+        { sender: 'user1', text: 'Looking good Zoe!', timestamp: '11:28 AM', type: 'text' },
+        { sender: 'user3', text: 'Let\'s sync up at 3 PM to discuss feedback.', timestamp: '11:30 AM', type: 'text' },
     ],
     group2: [
-        { sender: 'user5', text: 'Practice this weekend?', timestamp: 'Wednesday' },
-        { sender: 'user1', text: 'Who can make it on Saturday?', timestamp: 'Wednesday' },
+        { sender: 'user5', text: 'Practice this weekend?', timestamp: 'Wednesday', type: 'text' },
+        { sender: 'user1', text: 'Who can make it on Saturday?', timestamp: 'Wednesday', type: 'text' },
     ],
 };
   
@@ -89,3 +89,5 @@ export const mockCalls = [
     { id: 'call3', contact: mockContacts[2], type: 'voice' as const, status: 'incoming' as const, time: '11:15 AM' },
     { id: 'call4', contact: mockContacts[4], type: 'video' as const, status: 'missed' as const, time: 'Yesterday' },
 ];
+
+    

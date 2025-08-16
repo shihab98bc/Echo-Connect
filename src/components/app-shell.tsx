@@ -10,6 +10,7 @@ import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
 import SecurityModal from '@/components/modals/security-modal'; // Import the new modal
+import CameraModal from '@/components/modals/camera-modal';
 import { mockUser, mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
@@ -19,7 +20,7 @@ export type AppUser = typeof mockUser;
 export type Contact = (typeof initialContacts)[0];
 export type Call = (typeof mockCalls)[0];
 export type Update = (typeof initialUpdates)[0];
-export type Message = { sender: string; text: string; timestamp: string };
+export type Message = { sender: string; text: string; timestamp: string, type?: 'text' | 'image' };
 
 
 export default function AppShell() {
@@ -31,7 +32,8 @@ export default function AppShell() {
   const [isProfileSetupOpen, setProfileSetupOpen] = useState(false);
   const [isAddFriendOpen, setAddFriendOpen] = useState(false);
   const [isProfileViewOpen, setProfileViewOpen] = useState(false);
-  const [isSecurityModalOpen, setSecurityModalOpen] = useState(false); // State for the new modal
+  const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
+  const [isCameraOpen, setCameraOpen] = useState(false);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
 
   // State for views
@@ -97,11 +99,12 @@ export default function AppShell() {
     setView(activeChat ? 'chat' : 'main');
   };
 
-  const handleSendMessage = (contactId: string, messageText: string) => {
+  const handleSendMessage = (contactId: string, messageText: string, type: 'text' | 'image' = 'text') => {
     const message: Message = {
       sender: user.uid,
       text: messageText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      type: type,
     };
 
     setMessages(prev => {
@@ -115,7 +118,7 @@ export default function AppShell() {
 
     setContacts(prev => prev.map(c => 
         c.id === contactId 
-        ? { ...c, lastMessage: message.text, timestamp: message.timestamp, unread: 0 }
+        ? { ...c, lastMessage: type === 'image' ? '📷 Photo' : message.text, timestamp: message.timestamp, unread: 0 }
         : c
     ).sort((a,b) => a.id === contactId ? -1 : b.id === contactId ? 1 : 0));
   };
@@ -241,6 +244,13 @@ export default function AppShell() {
     handleExitSelectionMode();
   };
 
+  const handleSendPhoto = (photoDataUrl: string) => {
+    if (activeChat) {
+      handleSendMessage(activeChat.id, photoDataUrl, 'image');
+    }
+    setCameraOpen(false);
+  };
+
 
   // Simulate receiving an incoming call for demo purposes
   /*
@@ -308,6 +318,7 @@ export default function AppShell() {
             onToggleMute={handleToggleMute}
             onClearChat={handleClearChat}
             onBlockContact={handleBlockContact}
+            onOpenCamera={() => setCameraOpen(true)}
           />
         );
       case 'call':
@@ -366,6 +377,11 @@ export default function AppShell() {
         }}
       />
       <SecurityModal isOpen={isSecurityModalOpen} onClose={() => setSecurityModalOpen(false)} />
+      <CameraModal 
+        isOpen={isCameraOpen} 
+        onClose={() => setCameraOpen(false)} 
+        onSendPhoto={handleSendPhoto}
+      />
       
       {incomingCall && (
         <IncomingCallModal
@@ -388,3 +404,5 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
