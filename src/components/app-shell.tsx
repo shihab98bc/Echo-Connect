@@ -85,7 +85,6 @@ export default function AppShell() {
   const [incomingCall, setIncomingCall] = useState<any>(null);
   const [imageToSend, setImageToSend] = useState<{dataUrl: string, file: File} | null>(null);
 
-
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice', callId: string } | null>(null);
 
@@ -104,7 +103,7 @@ export default function AppShell() {
     setActiveCall(null);
     setCallToAnswer(null);
     setView(activeChat ? 'chat' : 'main');
-  }, [activeChat]);
+  }, [activeChat, setView]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     // Clean up previous listeners just in case
@@ -356,7 +355,7 @@ export default function AppShell() {
 
     setActiveChat(contact);
     setView('chat');
-}, [currentUser, toast, messages]);
+}, [currentUser, toast, messages, setView]);
 
   const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
