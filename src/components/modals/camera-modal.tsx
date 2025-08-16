@@ -151,11 +151,6 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                 <Button variant="ghost" size="icon" onClick={onClose} className="bg-black/50 hover:bg-black/70 rounded-full">
                     <X className="w-6 h-6" />
                 </Button>
-                {!photoDataUrl && hasFlash && !isFrontCamera &&(
-                    <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-black/50 hover:bg-black/70 rounded-full">
-                        {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
-                    </Button>
-                )}
              </div>
           </DialogHeader>
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
@@ -210,7 +205,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                   <div className="flex w-full justify-between items-center">
                        <div className="w-12 h-12 flex items-center justify-center">
                          {hasFlash && !isFrontCamera && (
-                            <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12">
+                            <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" aria-label="Toggle Flash">
                                 {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
                             </Button>
                          )}
