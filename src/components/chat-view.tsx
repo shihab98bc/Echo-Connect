@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useToast } from '@/hooks/use-toast';
 
 interface ChatViewProps {
   user: AppUser;
@@ -35,6 +36,7 @@ const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: s
 
 export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
+  const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const handleSend = (e: React.FormEvent) => {
@@ -43,6 +45,13 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       onSendMessage(contact.id, newMessage.trim());
       setNewMessage('');
     }
+  };
+
+  const handleFeatureNotImplemented = (feature: string) => {
+    toast({
+        title: "Feature not available",
+        description: `${feature} has not been implemented yet.`,
+    });
   };
 
   useEffect(() => {
@@ -81,10 +90,10 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={onOpenProfile}>View Contact</DropdownMenuItem>
-                    <DropdownMenuItem>Search</DropdownMenuItem>
-                    <DropdownMenuItem>Mute Notifications</DropdownMenuItem>
-                    <DropdownMenuItem>Clear Chat</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive">Block</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Search')}>Search</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Mute Notifications')}>Mute Notifications</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Clear Chat')}>Clear Chat</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive" onClick={() => handleFeatureNotImplemented('Block')}>Block</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
