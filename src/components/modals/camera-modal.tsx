@@ -1,13 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Flashlight, FlashlightOff, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
-import Image from 'next/image';
+import { Camera, Send, SwitchCamera, X } from 'lucide-react';
 
 interface CameraModalProps {
   isOpen: boolean;
@@ -23,34 +20,17 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
-  const [isFlashOn, setIsFlashOn] = useState(false);
-  const [hasFlash, setHasFlash] = useState(false);
 
   const cleanupCamera = useCallback(() => {
     if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-      });
+      stream.getTracks().forEach(track => track.stop());
     }
     setStream(null);
-    setPhotoDataUrl(null);
-    setHasFlash(false);
-    setIsFlashOn(false);
   }, [stream]);
-  
-  const handleClose = useCallback(() => {
-    cleanupCamera();
-    onClose();
-  }, [cleanupCamera, onClose]);
-
 
   useEffect(() => {
     const getCameraStream = async (front: boolean) => {
       try {
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
-
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: front ? 'user' : 'environment' },
         });
@@ -59,67 +39,30 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
           videoRef.current.srcObject = newStream;
         }
 
-        const videoTrack = newStream.getVideoTracks()[0];
-        // @ts-ignore - 'torch' is a valid capability but not in all TS libs
-        const capabilities = videoTrack.getCapabilities();
-        // @ts-ignore
-        setHasFlash(!!capabilities.torch);
         setStream(newStream);
         setHasPermission(true);
-      
       } catch (error) {
         console.error('Error accessing camera:', error);
         setHasPermission(false);
-        setHasFlash(false);
         toast({
           variant: 'destructive',
           title: 'Camera Access Denied',
           description: 'Please enable camera permissions in your browser settings.',
         });
-        handleClose();
+        onClose();
       }
     };
-    
-    if (isOpen) {
-      setPhotoDataUrl(null);
+
+    if (isOpen && !photoDataUrl) {
       getCameraStream(isFrontCamera);
     }
-    
+
     return () => {
-      if (isOpen) {
+      if (stream) {
         cleanupCamera();
       }
-    }
-  }, [isOpen, isFrontCamera, toast, handleClose, stream, cleanupCamera]);
-  
-  useEffect(() => {
-    const applyFlash = async () => {
-        if (stream && hasFlash && !isFrontCamera) {
-            const videoTrack = stream.getVideoTracks()[0];
-             try {
-                await videoTrack.applyConstraints({
-                    // @ts-ignore
-                    advanced: [{ torch: isFlashOn }]
-                });
-            } catch (error) {
-                console.error('Error toggling flash:', error);
-                setHasFlash(false); // Assume flash is not supported if it errors
-            }
-        }
     };
-    applyFlash();
-  }, [isFlashOn, stream, hasFlash, isFrontCamera]);
-
-
-  const handleSwitchCamera = () => {
-    setIsFrontCamera(prev => !prev);
-    setIsFlashOn(false);
-  };
-  
-  const handleToggleFlash = async () => {
-    if (!hasFlash || isFrontCamera) return;
-    setIsFlashOn(prev => !prev);
-  };
+  }, [isOpen, isFrontCamera, photoDataUrl, toast, onClose, cleanupCamera, stream]);
 
   const handleCapture = () => {
     if (videoRef.current && canvasRef.current) {
@@ -129,21 +72,19 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
+        // Flip the image horizontally if it's the front camera
         if (isFrontCamera) {
-            context.save();
-            context.scale(-1, 1);
-            context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-            context.restore();
+          context.save();
+          context.scale(-1, 1);
+          context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+          context.restore();
         } else {
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
         
         const dataUrl = canvas.toDataURL('image/jpeg');
         setPhotoDataUrl(dataUrl);
-
-        if (isFlashOn) {
-            setIsFlashOn(false);
-        }
+        cleanupCamera(); // Stop the stream after taking photo
       }
     }
   };
@@ -155,90 +96,60 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   const handleSend = () => {
     if (photoDataUrl) {
       onSendPhoto(photoDataUrl);
-      handleClose();
+      setPhotoDataUrl(null); // Reset for next time
+      onClose();
     }
   };
+  
+  const handleClose = () => {
+      cleanupCamera();
+      setPhotoDataUrl(null);
+      onClose();
+  }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
-          <DialogTitle className="sr-only">Camera</DialogTitle>
-          <div className="p-4 absolute top-0 left-0 z-10 w-full flex justify-between items-center">
-             <Button variant="ghost" size="icon" onClick={handleClose} className="bg-black/50 hover:bg-black/70 rounded-full">
-                 <X className="w-6 h-6" />
-             </Button>
-          </div>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md w-full p-0 gap-0">
+        <DialogHeader className="p-4">
+          <DialogTitle>Send a Photo</DialogTitle>
+          <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+        </DialogClose>
+        </DialogHeader>
 
-          <div className="relative flex-grow flex items-center justify-center overflow-hidden">
-            <AnimatePresence>
-              {hasPermission === null && (
-                  <motion.div 
-                    key="loader"
-                    className="absolute inset-0 flex items-center justify-center"
-                    exit={{ opacity: 0 }}
-                  >
-                      <Loader2 className="w-10 h-10 animate-spin" />
-                  </motion.div>
-              )}
-            </AnimatePresence>
+        <div className="relative aspect-square bg-black flex items-center justify-center">
+          {photoDataUrl ? (
+            <img src={photoDataUrl} alt="Captured" className="w-full h-full object-contain" />
+          ) : (
+            <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+          )}
+          {hasPermission === false && (
+            <p className="text-white">Camera permission denied.</p>
+          )}
+        </div>
 
-            <AnimatePresence mode="wait">
-              {photoDataUrl ? (
-                <motion.div 
-                  key="preview"
-                  className="w-full h-full"
-                  initial={{ opacity: 0, scale: 1.1 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                >
-                  <Image src={photoDataUrl} alt="Captured photo" layout="fill" objectFit="contain" />
-                </motion.div>
-              ) : (
-                <motion.video 
-                  key="video"
-                  ref={videoRef} 
-                  className={cn("w-full h-full object-cover", hasPermission ? 'visible' : 'invisible', isFrontCamera && 'scale-x-[-1]')} 
-                  autoPlay 
-                  playsInline 
-                  muted
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                />
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="p-4 flex items-center justify-center bg-black">
-              {photoDataUrl ? (
-                  <div className="flex w-full justify-between items-center">
-                      <Button variant="ghost" onClick={handleRetake} className="text-lg">Retake</Button>
-                      <Button onClick={handleSend} size="lg" className="bg-primary hover:bg-primary/90 rounded-full">
-                          Send
-                          <Send className="w-5 h-5 ml-2" />
-                      </Button>
-                  </div>
-              ) : (
-                  <div className="flex w-full justify-between items-center">
-                       <div className="w-12 h-12 flex items-center justify-center">
-                         {hasFlash && !isFrontCamera && (
-                            <Button variant="ghost" size="icon" onClick={handleToggleFlash} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" aria-label="Toggle Flash">
-                                {isFlashOn ? <Flashlight className="w-6 h-6" /> : <FlashlightOff className="w-6 h-6" />}
-                            </Button>
-                         )}
-                       </div>
-                      <Button 
-                          onClick={handleCapture} 
-                          className="w-20 h-20 rounded-full border-4 border-white bg-transparent hover:bg-white/20 active:bg-white/30"
-                          disabled={!hasPermission}
-                          aria-label="Take Photo"
-                      />
-                      <Button variant="ghost" size="icon" onClick={handleSwitchCamera} className="bg-white/20 hover:bg-white/30 rounded-full w-12 h-12" disabled={!hasPermission} aria-label="Switch Camera">
-                          <SwitchCameraIcon className="w-6 h-6" />
-                      </Button>
-                  </div>
-              )}
-          </div>
-          <canvas ref={canvasRef} className="hidden" />
+        <div className="p-4 flex justify-center items-center gap-4">
+          {photoDataUrl ? (
+            <>
+              <Button variant="outline" onClick={handleRetake}>Retake</Button>
+              <Button onClick={handleSend}>
+                Send <Send className="ml-2 h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+                <Button variant="ghost" size="icon" onClick={() => setIsFrontCamera(prev => !prev)} disabled={!hasPermission}>
+                    <SwitchCamera />
+                </Button>
+                <Button size="icon" className="w-16 h-16 rounded-full" onClick={handleCapture} disabled={!hasPermission}>
+                    <Camera className="w-8 h-8" />
+                </Button>
+                 <div className="w-10"></div>
+            </>
+          )}
+        </div>
+        <canvas ref={canvasRef} className="hidden" />
       </DialogContent>
     </Dialog>
   );

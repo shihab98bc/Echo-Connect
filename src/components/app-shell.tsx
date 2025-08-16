@@ -10,7 +10,7 @@ import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
 import SecurityModal from '@/components/modals/security-modal';
-import CameraModal from '@/components/modals/camera-modal';
+import ImagePreviewModal from '@/components/modals/image-preview-modal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db, storage } from '@/lib/firebase';
@@ -47,6 +47,7 @@ export type Message = {
   text: string; 
   timestamp: any;
   type?: 'text' | 'image' | 'audio';
+  caption?: string;
   duration?: number;
   status?: 'sent' | 'delivered' | 'seen';
 };
@@ -78,10 +79,11 @@ export default function AppShell() {
   const [isAddFriendOpen, setAddFriendOpen] = useState(false);
   const [isProfileViewOpen, setProfileViewOpen] = useState(false);
   const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
-  const [isCameraOpen, setCameraOpen] = useState(false);
+  const [isImagePreviewOpen, setImagePreviewOpen] = useState(false);
   
   const [callToAnswer, setCallToAnswer] = useState<any>(null);
   const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [imageToSend, setImageToSend] = useState<{dataUrl: string, file: File} | null>(null);
 
 
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
@@ -97,6 +99,12 @@ export default function AppShell() {
   
   // Firestore listeners unsubscribe functions
   const unsubscribeRefs = useRef<(() => void)[]>([]);
+
+  const handleEndCall = useCallback(() => {
+    setActiveCall(null);
+    setCallToAnswer(null);
+    setView(activeChat ? 'chat' : 'main');
+  }, [activeChat]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     // Clean up previous listeners just in case
@@ -197,10 +205,10 @@ export default function AppShell() {
                 }
             } else if (change.type === 'removed') {
               // If the call document is removed, it means the other user ended or rejected the call.
-              if (incomingCall && incomingCall.id === callId) {
+              if (incomingCall?.id === callId) {
                 setIncomingCall(null);
               }
-              if ((activeCall && activeCall.callId === callId) || (callToAnswer && callToAnswer.id === callId)) {
+              if ((activeCall?.callId === callId) || (callToAnswer?.id === callId)) {
                 handleEndCall();
                 toast({ title: 'Call Ended', description: 'The other user has ended the call.' });
               }
@@ -208,7 +216,7 @@ export default function AppShell() {
         }
     });
     unsubscribeRefs.current.push(unsubCalls);
-  }, [toast, incomingCall, activeCall, callToAnswer]);
+  }, [toast, incomingCall, activeCall, callToAnswer, handleEndCall]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
@@ -328,13 +336,11 @@ export default function AppShell() {
     const chatId = [currentUser.uid, contact.id].sort().join('_');
     const messagesRef = collection(db, 'chats', chatId, 'messages');
     
-    const messagesSnapshot = await getDocs(messagesRef);
+    const q = query(messagesRef, where('sender', '==', contact.id), where('status', '!=', 'seen'));
+    const messagesSnapshot = await getDocs(q);
     const batch = writeBatch(db);
     messagesSnapshot.forEach(docSnap => {
-        const msg = docSnap.data() as Message;
-        if (msg.sender === contact.id && msg.status !== 'seen') {
-            batch.update(docSnap.ref, { status: 'seen' });
-        }
+        batch.update(docSnap.ref, { status: 'seen' });
     });
     await batch.commit();
 
@@ -342,7 +348,7 @@ export default function AppShell() {
     setView('chat');
   }, [currentUser, toast]);
 
-  const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
+  const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
     
     const chatId = [currentUser.uid, contactId].sort().join('_');
@@ -366,7 +372,8 @@ export default function AppShell() {
         type: type,
         status: 'sent',
       };
-      if (duration) message.duration = duration;
+      if (options.duration) message.duration = options.duration;
+      if (options.caption) message.caption = options.caption;
 
       await addDoc(collection(db, 'chats', chatId, 'messages'), message);
       
@@ -529,12 +536,6 @@ export default function AppShell() {
     setActiveCall({ contact, type, callId });
     setView('call');
   }, [currentUser, toast]);
-
-  const handleEndCall = useCallback(() => {
-    setActiveCall(null);
-    setCallToAnswer(null);
-    setView(activeChat ? 'chat' : 'main');
-  }, [activeChat]);
   
   const handleClearChat = useCallback(async (contactId: string) => {
     if (!currentUser) return;
@@ -599,7 +600,6 @@ export default function AppShell() {
     }
   }, [currentUser, toast, activeChat]);
 
-
   const handleToggleChatSelection = useCallback((contactId: string) => {
     setSelectedChats(prev => 
         prev.includes(contactId) 
@@ -635,12 +635,25 @@ export default function AppShell() {
     handleExitSelectionMode();
   }, [currentUser, selectedChats, toast, handleExitSelectionMode]);
 
-  const handleSendPhoto = useCallback((photoDataUrl: string) => {
-    if (activeChat) {
-      handleSendMessage(activeChat.id, photoDataUrl, 'image');
+  const handleFileSelected = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const dataUrl = loadEvent.target?.result as string;
+      if (dataUrl) {
+        setImageToSend({ dataUrl, file });
+        setImagePreviewOpen(true);
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleSendImage = useCallback((caption: string) => {
+    if (activeChat && imageToSend) {
+      handleSendMessage(activeChat.id, imageToSend.dataUrl, 'image', { caption });
     }
-    setCameraOpen(false);
-  }, [activeChat, handleSendMessage]);
+    setImagePreviewOpen(false);
+    setImageToSend(null);
+  }, [activeChat, imageToSend, handleSendMessage]);
 
 
   const viewVariants = {
@@ -707,7 +720,7 @@ export default function AppShell() {
             onClearChat={handleClearChat}
             onBlockContact={handleBlockContact}
             onDeleteChat={handleDeleteChat}
-            onOpenCamera={() => setCameraOpen(true)}
+            onFileSelected={handleFileSelected}
           />
         );
       case 'call':
@@ -763,11 +776,17 @@ export default function AppShell() {
         />
       )}
       <SecurityModal isOpen={isSecurityModalOpen} onClose={() => setSecurityModalOpen(false)} />
-      <CameraModal 
-        isOpen={isCameraOpen} 
-        onClose={() => setCameraOpen(false)} 
-        onSendPhoto={handleSendPhoto}
-      />
+      {imageToSend && (
+        <ImagePreviewModal
+          isOpen={isImagePreviewOpen}
+          onClose={() => {
+            setImagePreviewOpen(false);
+            setImageToSend(null);
+          }}
+          onSend={handleSendImage}
+          imageDataUrl={imageToSend.dataUrl}
+        />
+      )}
       
       {incomingCall && (
         <IncomingCallModal

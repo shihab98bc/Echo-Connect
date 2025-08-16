@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { AppUser, Contact } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -32,6 +32,8 @@ const servers = {
     iceCandidatePoolSize: 10,
 };
 
+// Use a module-level variable to hold the peer connection and local stream
+// This helps prevent issues with React re-renders and stale references.
 let pc: RTCPeerConnection | null = null;
 let localStreamInstance: MediaStream | null = null;
 
@@ -125,46 +127,66 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   const localVideoContainerRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const callDocRef = useRef<DocumentReference | null>(null);
+
   const { toast } = useToast();
   const isAudioCall = type === 'voice';
   
-  const callDocRef = useRef<DocumentReference | null>(doc(db, 'calls', callId));
+  const handleEndCall = useCallback(async (isError = false) => {
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+    
+    if (localStreamInstance) {
+        localStreamInstance.getTracks().forEach(track => track.stop());
+        localStreamInstance = null;
+    }
+    
+    setLocalStream(null);
+    setRemoteStream(null);
+    
+    if (callDocRef.current && !isError) {
+         try {
+            const docSnap = await getDoc(callDocRef.current);
+            if (docSnap.exists()) await deleteDoc(callDocRef.current);
+         } catch (e) {
+            console.warn("Could not delete call document:", e)
+         }
+    }
+    callDocRef.current = null;
+    onEndCall();
+  }, [onEndCall]);
 
   useEffect(() => {
-    const handleEndCallCleanup = async (isError = false) => {
-        if (durationTimerRef.current) clearInterval(durationTimerRef.current);
-        pc?.close();
-        pc = null;
-        localStreamInstance?.getTracks().forEach(track => track.stop());
-        localStreamInstance = null;
-        setLocalStream(null);
-        setRemoteStream(null);
-        
-        if (callDocRef.current && !isError) {
-             const docSnap = await getDoc(callDocRef.current);
-             if (docSnap.exists()) await deleteDoc(callDocRef.current);
-        }
-        onEndCall();
-    };
-      
-    const setupAndStartCall = async () => {
+    if (!callId) return;
+    callDocRef.current = doc(db, 'calls', callId);
+
+    const startCall = async () => {
         pc = new RTCPeerConnection(servers);
 
         pc.onconnectionstatechange = () => {
             if(pc?.connectionState === 'connected') {
                 setIsCallConnected(true);
             } else if (pc?.connectionState === 'failed' || pc?.connectionState === 'disconnected' || pc?.connectionState === 'closed') {
-                handleEndCallCleanup();
+                handleEndCall();
             }
-        }
-
+        };
+        
         try {
-            localStreamInstance = await navigator.mediaDevices.getUserMedia({
+            const stream = await navigator.mediaDevices.getUserMedia({
                 video: type === 'video',
                 audio: true,
             });
-            setLocalStream(localStreamInstance);
+            localStreamInstance = stream;
+            setLocalStream(stream);
             setHasPermission(true);
+
+            stream.getTracks().forEach((track) => {
+                if (pc) pc.addTrack(track, stream);
+            });
         } catch (error) {
             console.error('Error accessing media devices.', error);
             setHasPermission(false);
@@ -173,13 +195,9 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 title: 'Media Access Denied',
                 description: 'Please enable camera and microphone permissions.',
             });
-            handleEndCallCleanup(true);
+            handleEndCall(true);
             return;
         }
-
-        localStreamInstance.getTracks().forEach((track) => {
-            pc?.addTrack(track, localStreamInstance!);
-        });
 
         const remote = new MediaStream();
         setRemoteStream(remote);
@@ -190,8 +208,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             });
         };
 
-        if (!callDocRef.current) return;
-        const candidatesCollection = collection(callDocRef.current, isCaller ? 'offerCandidates' : 'answerCandidates');
+        const candidatesCollection = collection(callDocRef.current!, isCaller ? 'offerCandidates' : 'answerCandidates');
         
         pc.onicecandidate = event => {
             if (event.candidate) {
@@ -203,50 +220,61 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             const offerDescription = await pc.createOffer();
             await pc.setLocalDescription(offerDescription);
             const offerPayload = { sdp: offerDescription.sdp, type: offerDescription.type, callerId: user.uid };
-            await setDoc(callDocRef.current, { offer: offerPayload });
+            
+            try {
+                await setDoc(callDocRef.current!, { offer: offerPayload });
+            } catch (err) {
+                 console.error("Error setting call doc:", err);
+                 handleEndCall(true);
+                 return;
+            }
 
-            const unsubAnswer = onSnapshot(callDocRef.current, (snapshot) => {
+            const unsubAnswer = onSnapshot(callDocRef.current!, (snapshot) => {
                 const data = snapshot.data();
                 if (pc && !pc.currentRemoteDescription && data?.answer) {
                     const answerDescription = new RTCSessionDescription(data.answer);
                     pc.setRemoteDescription(answerDescription);
                 }
             });
-            const answerCandidates = collection(callDocRef.current, 'answerCandidates');
+            const answerCandidates = collection(callDocRef.current!, 'answerCandidates');
             const unsubAnswerCandidates = onSnapshot(answerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
-                    if (change.type === 'added') pc?.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                    if (change.type === 'added' && pc) {
+                        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                    }
                 });
             });
             return () => { unsubAnswer(); unsubAnswerCandidates(); }
         } else {
-            if (!offer) return;
+            if (!offer || !callDocRef.current) return;
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             const answerDescription = await pc.createAnswer();
             await pc.setLocalDescription(answerDescription);
             const answerPayload = { type: answerDescription.type, sdp: answerDescription.sdp };
-            await updateDoc(callDocRef.current, { answer: answerPayload });
+            await updateDoc(callDocRef.current!, { answer: answerPayload });
 
-            const offerCandidates = collection(callDocRef.current, 'offerCandidates');
+            const offerCandidates = collection(callDocRef.current!, 'offerCandidates');
             const unsubOfferCandidates = onSnapshot(offerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
-                    if (change.type === 'added') pc?.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                    if (change.type === 'added' && pc) {
+                        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                    }
                 });
             });
             return () => { unsubOfferCandidates(); }
         }
     };
     
-    const unsubPromise = setupAndStartCall();
+    const unsubPromise = startCall();
 
     return () => {
         unsubPromise.then(unsub => {
             if (unsub) unsub();
         });
         
-        handleEndCallCleanup();
+        handleEndCall();
     };
-  }, [type, user.uid, callId, isCaller, offer, toast, onEndCall]);
+  }, [type, user.uid, callId, isCaller, offer, toast, handleEndCall]);
   
   useEffect(() => {
     if (isCallConnected) {
@@ -255,6 +283,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
       }, 1000);
     } else {
         if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+        setCallDuration(0);
     }
     return () => {
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
@@ -277,63 +306,54 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   };
   
   const toggleMute = () => {
-    localStream?.getAudioTracks().forEach(track => track.enabled = !track.enabled);
+    localStreamInstance?.getAudioTracks().forEach(track => track.enabled = !track.enabled);
     setIsMuted(m => !m);
     toast({ title: isMuted ? 'Microphone Unmuted' : 'Microphone Muted'});
   };
 
   const toggleVideo = () => {
-    if (type === 'voice' || !hasPermission) {
+    if (type === 'voice' || !hasPermission || !localStreamInstance) {
       toast({ variant: 'destructive', title: 'Camera Not Available' });
       return;
     }
-    localStream?.getVideoTracks().forEach(track => track.enabled = !track.enabled);
+    localStreamInstance.getVideoTracks().forEach(track => track.enabled = !track.enabled);
     setIsVideoEnabled(v => !v);
     toast({ title: isVideoEnabled ? 'Video Off' : 'Video On'});
   };
 
   const switchCamera = async () => {
-    if(!isVideoEnabled || !localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    videoTrack.stop();
+    if(!isVideoEnabled || !localStreamInstance || !pc) return;
+    const videoTrack = localStreamInstance.getVideoTracks()[0];
+    videoTrack.stop(); // Stop current track
 
     try {
         const newStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: videoTrack.getSettings().facingMode === 'user' ? 'environment' : 'user' },
-            audio: true
+            video: { facingMode: videoTrack.getSettings().facingMode === 'user' ? 'environment' : 'user' }
         });
         const newVideoTrack = newStream.getVideoTracks()[0];
-        localStream.removeTrack(videoTrack);
-        localStream.addTrack(newVideoTrack);
-        const sender = pc?.getSenders().find(s => s.track?.kind === 'video');
-        sender?.replaceTrack(newVideoTrack);
+        
+        // Replace the track in the local stream instance
+        localStreamInstance.removeTrack(videoTrack);
+        localStreamInstance.addTrack(newVideoTrack);
+        setLocalStream(new MediaStream(localStreamInstance.getTracks()));
+
+        // Replace the track in the peer connection
+        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+            await sender.replaceTrack(newVideoTrack);
+        }
         toast({ title: 'Camera Switched'});
     } catch(err) {
         console.error("Error switching camera", err);
         toast({ title: 'Could not switch camera', variant: 'destructive'});
-        localStream.addTrack(videoTrack); // Revert on failure
+        // Attempt to revert on failure
+        localStreamInstance.addTrack(videoTrack); 
     }
   }
 
   const toggleSpeaker = () => {
     setIsSpeakerOn(s => !s);
     toast({ title: isSpeakerOn ? 'Speaker Off' : 'Speaker On'});
-  };
-
-  const handleEndCall = async () => {
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
-    pc?.close();
-    pc = null;
-    localStreamInstance?.getTracks().forEach(track => track.stop());
-    localStreamInstance = null;
-    setLocalStream(null);
-    setRemoteStream(null);
-    
-    if (callDocRef.current) {
-         const docSnap = await getDoc(callDocRef.current);
-         if (docSnap.exists()) await deleteDoc(callDocRef.current);
-    }
-    onEndCall();
   };
 
   const formatDuration = (seconds: number) => {
@@ -371,7 +391,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             >
                 <h2 className="text-3xl font-bold font-headline text-shadow">{contact.name}</h2>
                  <p className="text-lg text-white/80 text-shadow">
-                    {isCallConnected ? formatDuration(callDuration) : isAudioCall ? 'Calling...' : 'Connecting...'}
+                    {isCallConnected ? formatDuration(callDuration) : 'Connecting...'}
                 </p>
             </motion.div>
         )}

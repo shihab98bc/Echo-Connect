@@ -5,7 +5,7 @@ import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon, MicIcon, CheckIcon } from '@/components/icons';
+import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon, MicIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CameraIcon, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
@@ -29,12 +29,12 @@ interface ChatViewProps {
   messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
-  onSendMessage: (contactId: string, message: string, type?: Message['type'], duration?: number) => void;
+  onSendMessage: (contactId: string, message: string, type?: Message['type'], options?: { duration?: number, caption?: string }) => void;
   onOpenProfile: () => void;
   onClearChat: (contactId: string) => void;
   onBlockContact: (contactId: string, isBlocked: boolean) => void;
   onDeleteChat: (contactId: string) => void;
-  onOpenCamera: () => void;
+  onFileSelected: (file: File) => void;
 }
 
 const AudioPlayer = ({ src, duration }: { src: string, duration?: number }) => {
@@ -122,18 +122,18 @@ const formatMessageTimestamp = (timestamp: any) => {
 };
 
 
-const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, status }: Message & { isSent: boolean }) => {
+const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, status, caption }: Message & { isSent: boolean }) => {
     const MessageStatus = () => {
         if (!isSent) return null;
         switch(status) {
             case 'sent':
-                return <CheckIcon className="h-4 w-4 text-muted-foreground" />;
+                return <Check className="h-4 w-4 text-muted-foreground" />;
             case 'delivered':
                 return <CheckCheck className="h-4 w-4 text-muted-foreground" />;
             case 'seen':
                 return <CheckCheck className="h-4 w-4 text-blue-500" strokeWidth={2.5}/>;
             default:
-                return <CheckIcon className="h-4 w-4 text-muted-foreground" />;
+                return <Check className="h-4 w-4 text-muted-foreground" />;
         }
     };
     
@@ -148,6 +148,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
                 {type === 'image' ? (
                     <div className="relative">
                         <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
+                        {caption && <p className="text-sm px-2 py-1 bg-black/50 text-white rounded-b-md absolute bottom-0 left-0 right-0">{caption}</p>}
                         <div className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1.5 py-0.5 rounded flex items-center gap-1">
                            <span>{formatMessageTimestamp(timestamp)}</span>
                            <MessageStatus />
@@ -271,7 +272,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
 };
 
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onOpenCamera }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onFileSelected }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
@@ -292,29 +293,20 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (loadEvent) => {
-          const dataUrl = loadEvent.target?.result as string;
-          if (dataUrl) {
-            onSendMessage(contact.id, dataUrl, 'image');
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        toast({
-          title: 'File type not supported',
-          description: `Sending files other than images is not yet implemented.`,
-          variant: 'destructive',
-        });
-      }
+    if (file && file.type.startsWith('image/')) {
+        onFileSelected(file);
+    } else if (file) {
+      toast({
+        title: 'File type not supported',
+        description: `Sending files other than images is not yet implemented.`,
+        variant: 'destructive',
+      });
     }
     if(e.target) e.target.value = '';
   };
   
   const handleSendVoiceMessage = (dataUrl: string, duration: number) => {
-    onSendMessage(contact.id, dataUrl, 'audio', duration);
+    onSendMessage(contact.id, dataUrl, 'audio', { duration });
     setIsRecording(false);
   };
 
@@ -388,18 +380,15 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend(e)}
                         placeholder="Type a message..." 
-                        className="flex-grow rounded-full bg-white pr-24"
+                        className="flex-grow rounded-full bg-white pr-12"
                         autoComplete="off"
                         disabled={isContactBlocked}
                     />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                         <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick} disabled={isContactBlocked}>
                             <Paperclip className="h-5 w-5" />
                         </Button>
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera} disabled={isContactBlocked}>
-                            <CameraIcon className="h-5 w-5" />
-                        </Button>
                     </div>
                 </div>
                 <AnimatePresence mode="wait">
