@@ -10,15 +10,16 @@ import { useToast } from '@/hooks/use-toast';
 interface AddFriendModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onAddFriend: (name: string) => void;
 }
 
-export default function AddFriendModal({ isOpen, onClose }: AddFriendModalProps) {
+export default function AddFriendModal({ isOpen, onClose, onAddFriend }: AddFriendModalProps) {
   const [friendId, setFriendId] = useState('');
   const { toast } = useToast();
 
   const handleAddFriend = () => {
     if (friendId.trim()) {
-      console.log('Sending friend request to:', friendId);
+      onAddFriend(friendId);
       toast({
         title: "Friend Request Sent",
         description: `Your request to ${friendId} has been sent.`,

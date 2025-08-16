@@ -90,7 +90,7 @@ const ContactItem = ({ contact, onStartChat, isSelectionMode, isSelected, onTogg
                 <p className="text-xs text-accent">{contact.timestamp}</p>
                 <div className="h-6 flex items-center justify-center">
                 {contact.unread > 0 ? (
-                    <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center">{contact.unread}</Badge>
+                    <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center rounded-full text-sm">{contact.unread}</Badge>
                 ) : contact.isMuted ? (
                     <MutedIcon className="h-5 w-5 text-muted-foreground" />
                 ) : null}

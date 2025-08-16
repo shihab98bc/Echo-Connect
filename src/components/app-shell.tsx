@@ -333,7 +333,19 @@ export default function AppShell() {
       </AnimatePresence>
 
       <ProfileSetupModal isOpen={isProfileSetupOpen} onSave={handleProfileSave} />
-      <AddFriendModal isOpen={isAddFriendOpen} onClose={() => setAddFriendOpen(false)} />
+      <AddFriendModal isOpen={isAddFriendOpen} onClose={() => setAddFriendOpen(false)} onAddFriend={(name) => {
+        const newContact = {
+          id: `user${contacts.length + 10}`,
+          name,
+          emoji: '👋',
+          lastMessage: 'Say hi!',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          unread: 0,
+          isMuted: false,
+        };
+        setContacts(prev => [newContact, ...prev]);
+        setAddFriendOpen(false);
+      }} />
       <ProfileViewModal isOpen={isProfileViewOpen} onClose={() => setProfileViewOpen(false)} user={user} onLogout={handleLogout} />
       
       {incomingCall && (
