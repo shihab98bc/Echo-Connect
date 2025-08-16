@@ -124,38 +124,43 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   const { toast } = useToast();
   const isAudioCall = type === 'voice';
   
-  // Using a ref to store the callDocRef to avoid re-creating it on every render
-  const callDocRef = useRef<DocumentReference | null>(null);
-  if (!callDocRef.current) {
-      callDocRef.current = doc(db, 'calls', callId);
-  }
+  const callDocRef = useRef<DocumentReference | null>(doc(db, 'calls', callId));
 
 
   useEffect(() => {
-    let localStreamInstance: MediaStream;
+    let localStreamInstance: MediaStream | null = null;
+    let peerConnection: RTCPeerConnection | null = null;
 
-    const setupPeerConnection = async () => {
-        pc = new RTCPeerConnection(servers);
-        
+    const setupAndStartCall = async () => {
+        peerConnection = new RTCPeerConnection(servers);
+        pc = peerConnection; // for cleanup
+
+        // Setup remote stream
         const remote = new MediaStream();
         setRemoteStream(remote);
 
-        pc.ontrack = (event) => {
+        peerConnection.ontrack = (event) => {
             event.streams[0].getTracks().forEach((track) => {
                 remote.addTrack(track);
             });
         };
 
+        // Get local media
         try {
-            localStreamInstance = await navigator.mediaDevices.getUserMedia({ 
+            localStreamInstance = await navigator.mediaDevices.getUserMedia({
                 video: type === 'video',
                 audio: true,
             });
             setLocalStream(localStreamInstance);
-            localStreamInstance.getTracks().forEach((track) => {
-                pc?.addTrack(track, localStreamInstance);
-            });
             setHasPermission(true);
+
+            // Add local tracks to peer connection
+            localStreamInstance.getTracks().forEach((track) => {
+                if(peerConnection) {
+                    peerConnection.addTrack(track, localStreamInstance!);
+                }
+            });
+
         } catch (error) {
             console.error('Error accessing media devices.', error);
             setHasPermission(false);
@@ -164,101 +169,134 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 title: 'Media Access Denied',
                 description: 'Please enable camera and microphone permissions.',
             });
-            onEndCall();
+            handleEndCall(true); // end call if permissions denied
             return;
         }
 
         // --- Signaling Logic ---
+        if (!callDocRef.current) return;
         const candidatesCollection = collection(callDocRef.current, isCaller ? 'offerCandidates' : 'answerCandidates');
         
-        pc.onicecandidate = event => {
-            event.candidate && addDoc(candidatesCollection, event.candidate.toJSON());
-        };
-    };
-
-    const startCall = async () => {
-        await setupPeerConnection();
-        if (!pc || !callDocRef.current) return;
-        
-        const offerDescription = await pc.createOffer();
-        await pc.setLocalDescription(offerDescription);
-
-        const offerPayload = {
-            sdp: offerDescription.sdp,
-            type: offerDescription.type,
-            callerId: user.uid,
-        };
-
-        await setDoc(callDocRef.current, { offer: offerPayload });
-
-        onSnapshot(callDocRef.current, (snapshot) => {
-            const data = snapshot.data();
-            if (!pc?.currentRemoteDescription && data?.answer) {
-                const answerDescription = new RTCSessionDescription(data.answer);
-                pc?.setRemoteDescription(answerDescription);
+        peerConnection.onicecandidate = event => {
+            if (event.candidate) {
+                addDoc(candidatesCollection, event.candidate.toJSON());
             }
-        });
-
-        const answerCandidates = collection(callDocRef.current, 'answerCandidates');
-        onSnapshot(answerCandidates, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added') {
-                    const candidate = new RTCIceCandidate(change.doc.data());
-                    pc?.addIceCandidate(candidate);
-                }
-            });
-        });
-    };
-
-    const answerCall = async () => {
-        await setupPeerConnection();
-        if (!pc || !offer || !callDocRef.current) return;
-        
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        
-        const answerDescription = await pc.createAnswer();
-        await pc.setLocalDescription(answerDescription);
-        
-        const answerPayload = {
-            type: answerDescription.type,
-            sdp: answerDescription.sdp,
         };
-        
-        await updateDoc(callDocRef.current, { answer: answerPayload });
 
-        const offerCandidates = collection(callDocRef.current, 'offerCandidates');
-        onSnapshot(offerCandidates, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added') {
-                    const candidate = new RTCIceCandidate(change.doc.data());
-                    pc?.addIceCandidate(candidate);
+        if (isCaller) {
+            // Create offer
+            const offerDescription = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offerDescription);
+
+            const offerPayload = {
+                sdp: offerDescription.sdp,
+                type: offerDescription.type,
+                callerId: user.uid,
+            };
+
+            await setDoc(callDocRef.current, { offer: offerPayload });
+
+            // Listen for answer
+            const unsubAnswer = onSnapshot(callDocRef.current, (snapshot) => {
+                const data = snapshot.data();
+                if (peerConnection && !peerConnection.currentRemoteDescription && data?.answer) {
+                    const answerDescription = new RTCSessionDescription(data.answer);
+                    peerConnection.setRemoteDescription(answerDescription);
                 }
             });
-        });
-    };
 
-    if (isCaller) {
-        startCall();
-    } else {
-        answerCall();
-    }
+            // Listen for answer candidates
+            const answerCandidates = collection(callDocRef.current, 'answerCandidates');
+            const unsubAnswerCandidates = onSnapshot(answerCandidates, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const candidate = new RTCIceCandidate(change.doc.data());
+                        peerConnection?.addIceCandidate(candidate);
+                    }
+                });
+            });
+
+            return () => {
+                unsubAnswer();
+                unsubAnswerCandidates();
+            }
+
+        } else { // Is callee
+            if (!offer) return;
+            
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            const answerDescription = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answerDescription);
+            
+            const answerPayload = {
+                type: answerDescription.type,
+                sdp: answerDescription.sdp,
+            };
+            
+            await updateDoc(callDocRef.current, { answer: answerPayload });
+
+            // Listen for offer candidates
+            const offerCandidates = collection(callDocRef.current, 'offerCandidates');
+            const unsubOfferCandidates = onSnapshot(offerCandidates, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const candidate = new RTCIceCandidate(change.doc.data());
+                        peerConnection?.addIceCandidate(candidate);
+                    }
+                });
+            });
+            
+            return () => {
+                unsubOfferCandidates();
+            }
+        }
+    };
+    
+    const unsubPromise = setupAndStartCall();
+
+    const handleEndCall = async (isError = false) => {
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        pc = null;
+        localStreamInstance?.getTracks().forEach(track => track.stop());
+        setLocalStream(null);
+        setRemoteStream(null);
+        
+        if (callDocRef.current && !isError) {
+             if (await getDoc(callDocRef.current)) {
+                await deleteDoc(callDocRef.current);
+             }
+        }
+        onEndCall();
+    };
 
     return () => {
-        localStreamInstance?.getTracks().forEach(track => track.stop());
-        remoteStream?.getTracks().forEach(track => track.stop());
-        if (pc) {
-            pc.close();
-            pc = null;
+        unsubPromise.then(unsub => {
+            if (unsub) unsub();
+        });
+        
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
         }
+        pc = null;
+        localStreamInstance?.getTracks().forEach(track => track.stop());
+        setLocalStream(null);
+        setRemoteStream(null);
+
         if (callDocRef.current) {
-            // Only the caller should delete the doc to avoid race conditions
-            if (isCaller) {
-               deleteDoc(callDocRef.current);
-            }
+            getDoc(callDocRef.current).then(docSnap => {
+                if (docSnap.exists() && isCaller) {
+                    deleteDoc(callDocRef.current!);
+                }
+            })
         }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, user.uid, contact.id, toast]);
+  }, [type, user.uid, callId, isCaller, offer, toast]);
   
   
   useEffect(() => {
@@ -503,7 +541,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                     </Button>
                 </div>
                 <Button
-                    onClick={onEndCall}
+                    onClick={() => onEndCall()}
                     className="bg-destructive hover:bg-destructive/80 text-destructive-foreground rounded-full w-20 h-20 shadow-lg"
                 >
                     <EndCallIcon className="h-10 w-10" />

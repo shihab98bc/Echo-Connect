@@ -162,15 +162,21 @@ export default function AppShell() {
             const newMessages = msgSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Message));
             setMessages(prev => ({ ...prev, [contact.id]: newMessages }));
             
-            // Mark received messages as 'seen'
             const batch = writeBatch(db);
             let hasUpdates = false;
             newMessages.forEach(msg => {
-              if (msg.sender !== uid && msg.status !== 'seen') {
-                  const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
-                  batch.update(msgRef, { status: 'seen' });
-                  hasUpdates = true;
-              }
+                // Mark received messages as 'delivered' if not already seen
+                if (msg.sender !== uid && msg.status === 'sent') {
+                    const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+                    batch.update(msgRef, { status: 'delivered' });
+                    hasUpdates = true;
+                }
+                // If the chat is currently active, mark as 'seen'
+                if (activeChat && activeChat.id === contact.id && msg.sender !== uid && msg.status !== 'seen') {
+                    const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+                    batch.update(msgRef, { status: 'seen' });
+                    hasUpdates = true;
+                }
             });
             if(hasUpdates) batch.commit();
 
@@ -213,7 +219,11 @@ export default function AppShell() {
                             type: callData.offer.type,
                             offer: callData.offer,
                             onAccept: () => {
-                                setCallToAnswer({ id: callId, offer: callData.offer });
+                                setCallToAnswer({ id: callId, offer: callData.offer, contact: {
+                                    id: callerData.uid,
+                                    name: callerData.name,
+                                    emoji: callerData.emoji,
+                                }});
                                 setView('call');
                                 setIncomingCall(null);
                             },
@@ -263,7 +273,8 @@ export default function AppShell() {
             sender: 'welcome-bot',
             text: "Welcome to EchoConnect! To add a friend, click the icon in the top right. You can find your own user ID in your profile. Share it with friends to connect!",
             timestamp: serverTimestamp(),
-            type: 'text'
+            type: 'text',
+            status: 'sent'
         };
         await addDoc(collection(db, 'chats', chatId, 'messages'), welcomeMessage);
 
@@ -286,6 +297,17 @@ export default function AppShell() {
       const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
       await updateDoc(contactRef, { unread: 0 });
     }
+
+    const chatId = [currentUser.uid, contact.id].sort().join('_');
+    const messagesRef = collection(db, 'chats', chatId, 'messages');
+    const q = query(messagesRef, where('sender', '==', contact.id), where('status', '!=', 'seen'));
+    const unseenMessages = await getDocs(q);
+    const batch = writeBatch(db);
+    unseenMessages.forEach(doc => {
+        batch.update(doc.ref, { status: 'seen' });
+    });
+    await batch.commit();
+
     setActiveChat(contact);
     setView('chat');
   };

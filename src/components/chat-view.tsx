@@ -130,7 +130,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
             case 'delivered':
                 return <CheckCheck className="h-4 w-4 text-muted-foreground" />;
             case 'seen':
-                return <CheckCheck className="h-4 w-4 text-blue-500" />;
+                return <CheckCheck className="h-4 w-4 text-blue-500" strokeWidth={2.5}/>;
             default:
                 return <CheckIcon className="h-4 w-4 text-muted-foreground" />;
         }
