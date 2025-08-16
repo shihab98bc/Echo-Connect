@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { EndCallIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon, SwitchCameraIcon, SpeakerIcon } from '@/components/icons';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useDragControls } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
@@ -27,7 +27,7 @@ const ParticipantVideo = ({ participant, isLocal, videoStream, isVideoEnabled, i
             videoRef.current.srcObject = videoStream;
         }
     }, [videoStream]);
-
+    
     return (
         <motion.div 
             layout
@@ -35,7 +35,7 @@ const ParticipantVideo = ({ participant, isLocal, videoStream, isVideoEnabled, i
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             className={cn(
-                "relative rounded-lg overflow-hidden bg-gray-900/50 flex items-center justify-center", 
+                "relative rounded-lg overflow-hidden bg-gray-900/50 flex items-center justify-center h-full w-full", 
                 isLocal && "border-2 border-white shadow-lg"
             )}
         >
@@ -109,6 +109,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const [isCameraReversed, setIsCameraReversed] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const localVideoContainerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -194,7 +195,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                     !isVideoEnabled && "bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900"
                 )}
             >
-                {(isVideoEnabled && hasCameraPermission) ? (
+                {(isVideoEnabled && hasCameraPermission && !isAudioCall) ? (
                      <video ref={videoRef} className="absolute w-full h-full object-cover opacity-30 blur-sm" autoPlay muted playsInline />
                 ) : (
                     <div className="absolute inset-0 opacity-20">
@@ -207,14 +208,14 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
 
       {/* Foreground Content */}
       <motion.div 
-        className="call-overlay absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent flex flex-col justify-between p-4 sm:p-6"
+        className="call-overlay absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent flex flex-col justify-between"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
       >
         {/* Header Info */}
         <motion.div 
-            className="text-center pt-4"
+            className="text-center pt-6 z-10"
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.3 }}
@@ -226,12 +227,12 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         </motion.div>
 
         {/* Main Content: Video or Avatars */}
-        <div className="flex-grow flex items-center justify-center relative">
+        <div className="absolute inset-0 flex items-center justify-center">
             <AnimatePresence>
             {isAudioCall ? (
                  <motion.div 
                     key="audio-view"
-                    className="flex-grow flex flex-col items-center justify-center"
+                    className="flex-grow flex flex-col items-center justify-center p-6"
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
@@ -247,22 +248,57 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
             ) : (
                  <motion.div 
                     key="video-view"
+                    ref={localVideoContainerRef}
                     className="w-full h-full flex flex-col items-center justify-center relative"
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                 >
-                    <div className="w-full h-full max-h-[60vh] aspect-[9/16] rounded-lg overflow-hidden shadow-lg">
+                    <div className="absolute inset-0 w-full h-full">
                        <ParticipantVideo participant={contact} isLocal={false} videoStream={null} isVideoEnabled={isVideoEnabled} isAudioOnly={false}/>
                     </div>
-                    <div className="absolute bottom-24 right-4 w-28 h-40 z-10">
+
+                    <motion.div 
+                        className="absolute w-28 h-40 z-10 cursor-move"
+                        drag
+                        dragConstraints={localVideoContainerRef}
+                        dragSnapToOrigin={false}
+                        dragElastic={0.1}
+                        initial={{ top: 'auto', bottom: 120, right: 20, x:0, y:0 }}
+                        dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+                        onDragEnd={(_, info) => {
+                            const parent = localVideoContainerRef.current;
+                            if (!parent) return;
+                            const { offset, velocity } = info;
+                            const { width, height } = parent.getBoundingClientRect();
+                            const localWidth = 112; // w-28
+                            const localHeight = 160; // h-40
+                            const PADDING = 20;
+
+                            const isTop = offset.y < (height / 2 - localHeight / 2);
+                            const isLeft = offset.x < (width / 2 - localWidth / 2);
+
+                            const newX = isLeft ? PADDING : width - localWidth - PADDING;
+                            const newY = isTop ? PADDING : height - localHeight - PADDING - 100;
+                            
+                            // This is a bit of a hack to get the motion.div to re-render with new styles
+                            const element = (localVideoContainerRef.current?.lastChild as HTMLDivElement)
+                            if(element) {
+                                element.style.top = `${newY}px`;
+                                element.style.left = `${newX}px`;
+                                element.style.right = 'auto';
+                                element.style.bottom = 'auto';
+                            }
+                        }}
+                    >
                         <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
-                    </div>
+                    </motion.div>
+
                     {hasCameraPermission === false && type === 'video' && (
-                        <Alert variant="destructive" className="absolute top-4 w-auto">
+                        <Alert variant="destructive" className="absolute top-24 w-auto z-20">
                             <AlertTitle>Camera Access Denied</AlertTitle>
                             <AlertDescription>
-                                Please enable camera permissions. Video is disabled.
+                                Please enable camera permissions.
                             </AlertDescription>
                         </Alert>
                     )}
@@ -274,12 +310,12 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
 
         {/* Call Controls */}
         <motion.div 
-            className="flex flex-col items-center gap-6 pb-4"
+            className="flex flex-col items-center gap-6 pb-6 z-10"
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.5, type: 'spring', stiffness: 100 }}
         >
-            <div className="flex justify-center gap-4 p-4 bg-black/40 rounded-full backdrop-blur-md border border-white/10">
+             <div className="flex justify-center gap-4 p-4 bg-black/40 rounded-full backdrop-blur-md border border-white/10">
                 <Button
                     variant="ghost"
                     size="icon"
