@@ -241,6 +241,7 @@ export default function AppShell() {
 
 
   // Simulate receiving an incoming call for demo purposes
+  /*
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isAuthenticated && !incomingCall && !activeCall) {
@@ -252,6 +253,7 @@ export default function AppShell() {
     }, 10000);
     return () => clearTimeout(timer);
   }, [isAuthenticated, incomingCall, activeCall]);
+  */
 
 
   const viewVariants = {
