@@ -39,8 +39,6 @@ export default function AppShell() {
   const [contacts, setContacts] = useState(initialContacts);
   const [updates, setUpdates] = useState(initialUpdates);
 
-  const ringtoneRef = useRef<HTMLAudioElement>(null);
-
   const handleLogin = () => {
     setIsAuthenticated(true);
     const isNewUser = !mockUser.name;
@@ -116,15 +114,6 @@ export default function AppShell() {
     }, 10000);
     return () => clearTimeout(timer);
   }, [isAuthenticated, incomingCall]);
-
-  useEffect(() => {
-    if (incomingCall && ringtoneRef.current) {
-        ringtoneRef.current.play().catch(e => console.error("Autoplay failed", e));
-    } else if (!incomingCall && ringtoneRef.current) {
-        ringtoneRef.current.pause();
-        ringtoneRef.current.currentTime = 0;
-    }
-  }, [incomingCall]);
 
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
@@ -213,13 +202,6 @@ export default function AppShell() {
           }}
         />
       )}
-
-      <audio
-        id="ringtone"
-        ref={ringtoneRef}
-        loop
-        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAADY="
-      />
     </div>
   );
 }
