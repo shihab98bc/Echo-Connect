@@ -109,9 +109,12 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const [isVideoEnabled, setIsVideoEnabled] = useState(type === 'video');
   const [isCameraReversed, setIsCameraReversed] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [showControls, setShowControls] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const localVideoContainerRef = useRef<HTMLDivElement>(null);
+  const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  const isAudioCall = type === 'voice';
 
   useEffect(() => {
     let stream: MediaStream;
@@ -144,8 +147,26 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
     };
   }, [type, isCameraReversed, toast]);
 
+  useEffect(() => {
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+    if (showControls && !isAudioCall) {
+      controlsTimerRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 5000);
+    }
+    return () => {
+      if (controlsTimerRef.current) {
+        clearTimeout(controlsTimerRef.current);
+      }
+    };
+  }, [showControls, isAudioCall]);
 
-  const isAudioCall = type === 'voice';
+  const toggleControls = () => {
+    if (isAudioCall) return;
+    setShowControls(s => !s);
+  };
 
   const isGroupCall = 'isGroup' in contact && contact.isGroup;
   const participants = isGroupCall && 'members' in contact ? contact.members : [contact];
@@ -183,7 +204,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   }
 
   return (
-    <div className="absolute inset-0 bg-gray-900 text-white flex flex-col z-50 overflow-hidden">
+    <div className="absolute inset-0 bg-gray-900 text-white flex flex-col z-50 overflow-hidden" onClick={toggleControls}>
         {/* Background */}
         <AnimatePresence>
             <motion.div
@@ -215,20 +236,26 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         transition={{ duration: 0.5 }}
       >
         {/* Header Info */}
-        <motion.div 
-            className="text-center pt-6 z-10"
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3 }}
-        >
-            <h2 className="text-3xl font-bold font-headline text-shadow">{contact.name}</h2>
-            <p className="text-lg text-white/80 text-shadow">
-                {isGroupCall ? `Group ${type} call` : isAudioCall ? 'Calling...' : 'Video Call'}
-            </p>
-        </motion.div>
+        <AnimatePresence>
+        {showControls && (
+            <motion.div 
+                className="text-center pt-6 z-10"
+                initial={{ y: -20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -20, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+            >
+                <h2 className="text-3xl font-bold font-headline text-shadow">{contact.name}</h2>
+                <p className="text-lg text-white/80 text-shadow">
+                    {isGroupCall ? `Group ${type} call` : isAudioCall ? 'Calling...' : 'Video Call'}
+                </p>
+            </motion.div>
+        )}
+        </AnimatePresence>
+        
 
         {/* Main Content: Video or Avatars */}
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center" onClick={e => e.stopPropagation()}>
             <AnimatePresence>
             {isAudioCall ? (
                  <motion.div 
@@ -288,55 +315,61 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
 
 
         {/* Call Controls */}
-        <motion.div 
-            className="flex flex-col items-center gap-6 pb-6 z-10"
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5, type: 'spring', stiffness: 100 }}
-        >
-             <div className="flex justify-center gap-4 p-4 bg-black/40 rounded-full backdrop-blur-md border border-white/10">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleVideo}
-                    className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", !isVideoEnabled && "bg-white/10", isAudioCall && "hidden")}
-                    disabled={isAudioCall || hasCameraPermission === false}
-                >
-                    {isVideoEnabled ? <VideoIcon className="h-7 w-7" /> : <VideoOffIcon className="h-7 w-7" />}
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleMute}
-                    className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", isMuted && "bg-destructive/50")}
-                >
-                    {isMuted ? <MicOffIcon className="h-7 w-7" /> : <MicIcon className="h-7 w-7" />}
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={switchCamera}
-                    className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20 disabled:opacity-50", isAudioCall && "hidden")}
-                    disabled={isAudioCall || !isVideoEnabled || hasCameraPermission === false}
-                >
-                    <SwitchCameraIcon className="h-7 w-7" />
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleSpeaker}
-                    className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", isSpeakerOn && "bg-white/10")}
-                >
-                    <SpeakerIcon className="h-7 w-7" />
-                </Button>
-            </div>
-            <Button
-                onClick={onEndCall}
-                className="bg-destructive hover:bg-destructive/80 text-destructive-foreground rounded-full w-20 h-20 shadow-lg"
+        <AnimatePresence>
+        {showControls && (
+            <motion.div 
+                className="flex flex-col items-center gap-6 pb-6 z-10"
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 100, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                onClick={e => e.stopPropagation()}
             >
-                <EndCallIcon className="h-10 w-10" />
-            </Button>
-        </motion.div>
+                <div className="flex justify-center gap-4 p-4 bg-black/40 rounded-full backdrop-blur-md border border-white/10">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleVideo}
+                        className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", !isVideoEnabled && "bg-white/10", isAudioCall && "hidden")}
+                        disabled={isAudioCall || hasCameraPermission === false}
+                    >
+                        {isVideoEnabled ? <VideoIcon className="h-7 w-7" /> : <VideoOffIcon className="h-7 w-7" />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleMute}
+                        className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", isMuted && "bg-destructive/50")}
+                    >
+                        {isMuted ? <MicOffIcon className="h-7 w-7" /> : <MicIcon className="h-7 w-7" />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={switchCamera}
+                        className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20 disabled:opacity-50", isAudioCall && "hidden")}
+                        disabled={isAudioCall || !isVideoEnabled || hasCameraPermission === false}
+                    >
+                        <SwitchCameraIcon className="h-7 w-7" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleSpeaker}
+                        className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", isSpeakerOn && "bg-white/10")}
+                    >
+                        <SpeakerIcon className="h-7 w-7" />
+                    </Button>
+                </div>
+                <Button
+                    onClick={onEndCall}
+                    className="bg-destructive hover:bg-destructive/80 text-destructive-foreground rounded-full w-20 h-20 shadow-lg"
+                >
+                    <EndCallIcon className="h-10 w-10" />
+                </Button>
+            </motion.div>
+        )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );
