@@ -313,40 +313,50 @@ export default function AppShell() {
     if (!currentUser) return;
 
     if (currentUser.blocked && currentUser.blocked[contact.id]) {
-      toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked ${contact.name}. Unblock them to chat.` });
-      return;
+        toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked ${contact.name}. Unblock them to chat.` });
+        return;
     }
 
     const contactDocRef = doc(db, 'users', contact.id);
     const contactDoc = await getDoc(contactDocRef);
-    if(contactDoc.exists()){
-      const contactData = contactDoc.data() as AppUser;
-      if (contactData.blocked && contactData.blocked[currentUser.uid]) {
-        toast({ variant: 'destructive', title: 'Blocked', description: `You cannot message this user.` });
-        return;
-      }
+    if (contactDoc.exists()) {
+        const contactData = contactDoc.data() as AppUser;
+        if (contactData.blocked && contactData.blocked[currentUser.uid]) {
+            toast({ variant: 'destructive', title: 'Blocked', description: `You cannot message this user.` });
+            return;
+        }
     }
-    
+
     // Mark messages as read
-     if (contact.unread > 0) {
-      const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
-      await updateDoc(contactRef, { unread: 0 });
+    if (contact.unread > 0) {
+        const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
+        await updateDoc(contactRef, { unread: 0 });
     }
 
     const chatId = [currentUser.uid, contact.id].sort().join('_');
-    const messagesRef = collection(db, 'chats', chatId, 'messages');
-    
-    const q = query(messagesRef, where('sender', '==', contact.id), where('status', '!=', 'seen'));
-    const messagesSnapshot = await getDocs(q);
+    const allMessages = messages[contact.id] || [];
     const batch = writeBatch(db);
-    messagesSnapshot.forEach(docSnap => {
-        batch.update(docSnap.ref, { status: 'seen' });
+    let hasUpdates = false;
+
+    allMessages.forEach(msg => {
+        if (msg.sender === contact.id && msg.status !== 'seen') {
+            const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+            batch.update(msgRef, { status: 'seen' });
+            hasUpdates = true;
+        }
     });
-    await batch.commit();
+
+    if (hasUpdates) {
+        try {
+            await batch.commit();
+        } catch (error) {
+            console.error("Error marking messages as seen:", error);
+        }
+    }
 
     setActiveChat(contact);
     setView('chat');
-  }, [currentUser, toast]);
+}, [currentUser, toast, messages]);
 
   const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
