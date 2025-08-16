@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2, Camera } from 'lucide-react';
+import { Check, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2, Camera, Reply, MessageSquareQuote, X } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
@@ -36,6 +37,9 @@ interface ChatViewProps {
   onBlockContact: (contactId: string, isBlocked: boolean) => void;
   onDeleteChat: (contactId: string) => void;
   onFileSelected: (file: File) => void;
+  onDeleteMessage: (messageId: string) => void;
+  onSetReplyToMessage: (message: Message | null) => void;
+  replyingTo: Message | null;
 }
 
 const AudioPlayer = ({ src, duration }: { src: string, duration?: number }) => {
@@ -123,7 +127,9 @@ const formatMessageTimestamp = (timestamp: any) => {
 };
 
 
-const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, status, caption }: Message & { isSent: boolean }) => {
+const MessageBubble = ({ msg, isSent, onReply, onDelete }: { msg: Message, isSent: boolean, onReply: (msg: Message) => void, onDelete: (id: string) => void }) => {
+    const { text, timestamp, type = 'text', duration, status, caption, replyTo, isDeleted } = msg;
+
     const MessageStatus = () => {
         if (!isSent) return null;
         switch(status) {
@@ -138,15 +144,38 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
         }
     };
     
+    const ReplyContent = () => {
+        if (!replyTo) return null;
+        return (
+            <div className="p-2 mb-1 bg-black/5 rounded-t-lg border-l-2 border-primary">
+                <p className="font-bold text-primary text-sm">{replyTo.sender}</p>
+                <p className="text-sm text-muted-foreground truncate">{replyTo.text}</p>
+            </div>
+        )
+    }
+
     return (
-        <div className={cn("flex", isSent ? 'justify-end' : 'justify-start')}>
+        <div className={cn("flex group", isSent ? 'justify-end' : 'justify-start')}>
+             {!isSent && !isDeleted && (
+                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6"><MoreOptionsIcon className="w-4 h-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={() => onReply(msg)}><Reply className="mr-2 h-4 w-4" /> Reply</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            )}
             <div className={cn(
                 "relative max-w-xs lg:max-w-md px-1 py-1 rounded-lg shadow-md", 
                 isSent ? 'bg-message-out-bg rounded-br-none' : 'bg-message-in-bg rounded-bl-none',
                 type === 'image' && 'p-1 bg-transparent shadow-none',
                 type === 'audio' && 'p-2'
             )}>
-                {type === 'image' ? (
+                <ReplyContent />
+                {type === 'image' && !isDeleted ? (
                     <div className="relative">
                         <Image src={text} alt={caption || "Sent photo"} width={250} height={250} className="rounded-md object-cover" />
                         {caption && <p className="text-sm px-2 py-1 bg-black/50 text-white rounded-b-md absolute bottom-0 left-0 right-0">{caption}</p>}
@@ -155,7 +184,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
                            <MessageStatus />
                         </div>
                     </div>
-                ) : type === 'audio' ? (
+                ) : type === 'audio' && !isDeleted ? (
                     <div className="flex items-end gap-2">
                         <AudioPlayer src={text} duration={duration} />
                         <div className="flex items-center gap-1 self-end pb-1">
@@ -165,14 +194,29 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
                     </div>
                 ) : (
                     <>
-                        <p className="text-sm text-foreground px-2 py-1">{text}</p>
-                        <div className="flex justify-end items-center gap-1 mt-1 px-2">
-                            <p className="text-xs text-muted-foreground text-right">{formatMessageTimestamp(timestamp)}</p>
-                            <MessageStatus />
-                        </div>
+                        <p className={cn("text-sm text-foreground px-2 py-1", isDeleted && "italic text-muted-foreground")}>{text}</p>
+                        {!isDeleted && (
+                             <div className="flex justify-end items-center gap-1 mt-1 px-2">
+                                <p className="text-xs text-muted-foreground text-right">{formatMessageTimestamp(timestamp)}</p>
+                                <MessageStatus />
+                            </div>
+                        )}
                     </>
                 )}
             </div>
+            {isSent && !isDeleted && (
+                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6"><MoreOptionsIcon className="w-4 h-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => onReply(msg)}><Reply className="mr-2 h-4 w-4" /> Reply</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(msg.id)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            )}
         </div>
     );
 };
@@ -290,8 +334,29 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
     );
 };
 
+const ReplyPreview = ({ message, onCancel, contactName }: { message: Message, onCancel: () => void, contactName: string }) => {
+    const senderName = message.sender === 'self' ? 'You' : contactName;
+    return (
+        <motion.div 
+            className="p-2 border-t bg-secondary flex items-center gap-2"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        >
+            <MessageSquareQuote className="h-5 w-5 text-primary flex-shrink-0" />
+            <div className="flex-grow overflow-hidden">
+                <p className="font-bold text-primary text-sm">{senderName}</p>
+                <p className="text-sm text-muted-foreground truncate">{message.text}</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onCancel} className="h-7 w-7">
+                <X className="h-4 w-4"/>
+            </Button>
+        </motion.div>
+    )
+}
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onFileSelected }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onFileSelected, onDeleteMessage, onSetReplyToMessage, replyingTo }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -356,7 +421,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
             viewport.scrollTop = viewport.scrollHeight;
         }
     }
-  }, [messages]);
+  }, [messages, replyingTo]);
   
   const isContactBlocked = user.blocked ? user.blocked[contact.id] : false;
 
@@ -401,11 +466,23 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
       <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} {...msg} isSent={msg.sender === user.uid} />
+            <MessageBubble 
+                key={msg.id} 
+                msg={msg} 
+                isSent={msg.sender === user.uid} 
+                onReply={onSetReplyToMessage}
+                onDelete={onDeleteMessage}
+            />
           ))}
         </div>
       </ScrollArea>
       
+       <AnimatePresence>
+        {replyingTo && (
+            <ReplyPreview message={replyingTo} onCancel={() => onSetReplyToMessage(null)} contactName={contact.name}/>
+        )}
+       </AnimatePresence>
+
       <div id="chat-input-container" className="p-2 bg-secondary border-t flex items-center gap-2">
         {isRecording ? (
             <VoiceRecorder onSend={handleSendVoiceMessage} onCancel={() => setIsRecording(false)} />
@@ -460,3 +537,5 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     </div>
   );
 }
+
+    

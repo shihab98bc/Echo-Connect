@@ -52,6 +52,12 @@ export type Message = {
   duration?: number;
   status?: 'sent' | 'delivered' | 'seen';
   tempId?: string;
+  replyTo?: {
+    id: string;
+    text: string;
+    sender: string;
+  };
+  isDeleted?: boolean;
 };
 
 export type Call = { 
@@ -89,6 +95,7 @@ export default function AppShell() {
 
   const [activeChat, setActiveChat] = useState<Contact | null>(null);
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice', callId: string } | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [updates, setUpdates] = useState<Update[]>([]);
@@ -172,6 +179,9 @@ export default function AppShell() {
                             const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
                             if (tempIndex > -1) {
                                 updatedMessages[tempIndex] = newMsg;
+                            } else {
+                                // If not found, it's a new modification to an existing message.
+                                updatedMessages.push(newMsg);
                             }
                         }
                     } else if (change.type === 'removed') {
@@ -436,6 +446,16 @@ export default function AppShell() {
         duration: options.duration,
         caption: options.caption,
     };
+    
+    if (replyToMessage) {
+        optimisticMessage.replyTo = {
+            id: replyToMessage.id,
+            text: replyToMessage.text,
+            sender: replyToMessage.sender
+        };
+    }
+    setReplyToMessage(null);
+
 
     setMessages(prev => ({
         ...prev,
@@ -473,6 +493,8 @@ export default function AppShell() {
         
         if (options.caption) messagePayload.caption = options.caption;
         if (options.duration) messagePayload.duration = options.duration;
+        if (optimisticMessage.replyTo) messagePayload.replyTo = optimisticMessage.replyTo;
+
 
         await runTransaction(db, async (transaction) => {
             const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
@@ -531,7 +553,27 @@ export default function AppShell() {
             [contactId]: prev[contactId].filter(m => m.id !== tempId),
         }));
     }
+  }, [currentUser, toast, replyToMessage]);
+
+  const handleDeleteMessage = useCallback(async (contactId: string, messageId: string) => {
+      if (!currentUser) return;
+      const chatId = [currentUser.uid, contactId].sort().join('_');
+      const messageRef = doc(db, 'chats', chatId, 'messages', messageId);
+      try {
+          await updateDoc(messageRef, {
+              text: 'This message was deleted',
+              isDeleted: true,
+              type: 'text',
+              caption: undefined,
+              duration: undefined,
+              replyTo: undefined,
+          });
+      } catch (error) {
+          console.error("Error deleting message:", error);
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not delete message.' });
+      }
   }, [currentUser, toast]);
+
 
   const handleAddFriend = useCallback(async (friendEmail: string) => {
     if (!currentUser || friendEmail === currentUser.email) {
@@ -852,6 +894,9 @@ export default function AppShell() {
             onBlockContact={handleBlockContact}
             onDeleteChat={handleDeleteChat}
             onFileSelected={handleFileSelected}
+            onDeleteMessage={(messageId) => handleDeleteMessage(activeChat.id, messageId)}
+            onSetReplyToMessage={setReplyToMessage}
+            replyingTo={replyToMessage}
           />
         );
       case 'call':
@@ -929,5 +974,7 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
 
     
