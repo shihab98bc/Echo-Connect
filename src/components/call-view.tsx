@@ -255,7 +255,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         
 
         {/* Main Content: Video or Avatars */}
-        <div className="absolute inset-0 flex items-center justify-center" onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 flex items-center justify-center">
             <AnimatePresence>
             {isAudioCall ? (
                  <motion.div 
@@ -282,7 +282,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                 >
-                    <div className="absolute inset-0 w-full h-full">
+                    <div className="absolute inset-0 w-full h-full" onClick={e => e.stopPropagation()}>
                        <ParticipantVideo participant={contact} isLocal={false} videoStream={null} isVideoEnabled={isVideoEnabled} isAudioOnly={false}/>
                     </div>
 
@@ -295,6 +295,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                           dragElastic={0.1}
                           initial={{ top: 20, right: 20, x:0, y:0 }}
                           dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+                          onClick={e => e.stopPropagation()}
                       >
                           <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
                       </motion.div>
