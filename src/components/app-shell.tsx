@@ -168,7 +168,13 @@ export default function AppShell() {
                         if (index > -1) {
                             updatedMessages[index] = { ...updatedMessages[index], ...newMsg };
                         } else {
-                            updatedMessages.push(newMsg);
+                            // This can happen if a message status changes before the optimistic one is replaced
+                            const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
+                            if (tempIndex > -1) {
+                                updatedMessages[tempIndex] = newMsg;
+                            } else {
+                                updatedMessages.push(newMsg);
+                            }
                         }
                     } else if (change.type === 'removed') {
                         const index = updatedMessages.findIndex(m => m.id === newMsg.id);
@@ -458,7 +464,7 @@ export default function AppShell() {
             lastMessageText = finalContentUrl;
         }
 
-        const messagePayload: Partial<Message> = {
+        const messagePayload: Omit<Message, 'id'> & { timestamp: any } = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
@@ -470,48 +476,53 @@ export default function AppShell() {
         if (options.caption) messagePayload.caption = options.caption;
         if (options.duration) messagePayload.duration = options.duration;
 
+        await runTransaction(db, async (transaction) => {
+            const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+            const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
+            const otherUserDocRef = doc(db, 'users', contactId);
+            
+            const otherUserDoc = await transaction.get(otherUserDocRef);
+            if (!otherUserDoc.exists()) {
+                throw "User not found";
+            }
+            const otherUserData = otherUserDoc.data() as AppUser;
 
-        const batch = writeBatch(db);
-        const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
-        batch.set(newMessageRef, messagePayload);
+            const contactUpdatePayload = {
+                 lastMessage: lastMessageText,
+                 timestamp: serverTimestamp(),
+            };
 
-        const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
-        const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-        
-        const otherUserSnap = await getDoc(doc(db, 'users', contactId));
-        
-        const contactUpdatePayload = {
-             lastMessage: lastMessageText,
-             timestamp: serverTimestamp(),
-        }
-
-        if (otherUserSnap.exists()) {
-            const otherUserData = otherUserSnap.data() as AppUser;
             const currentUserContactUpdate = {
                 ...contactUpdatePayload,
                 name: otherUserData.name,
                 emoji: otherUserData.emoji,
                 photoURL: otherUserData.photoURL,
-                isMuted: false,
                 unread: 0,
+                isMuted: false,
             };
-            batch.set(userContactRef, currentUserContactUpdate, { merge: true });
-        }
+            transaction.set(userContactRef, currentUserContactUpdate, { merge: true });
 
+            const otherUserContactDoc = await transaction.get(otherUserContactRef);
+            if (otherUserContactDoc.exists()) {
+                transaction.update(otherUserContactRef, {
+                    ...contactUpdatePayload,
+                    unread: increment(1),
+                });
+            } else {
+                transaction.set(otherUserContactRef, {
+                    ...contactUpdatePayload,
+                    name: currentUser.name,
+                    emoji: currentUser.emoji,
+                    photoURL: currentUser.photoURL,
+                    unread: 1,
+                    isMuted: false,
+                });
+            }
 
-        const otherUserContactUpdate = {
-            ...contactUpdatePayload,
-            name: currentUser.name,
-            emoji: currentUser.emoji,
-            photoURL: currentUser.photoURL,
-            isMuted: false,
-            unread: increment(1),
-        };
-        batch.set(otherUserContactRef, otherUserContactUpdate, { merge: true });
+            const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
+            transaction.set(newMessageRef, messagePayload);
+        });
 
-
-        await batch.commit();
-        
     } catch (error) {
         console.error("Error sending message:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
@@ -918,6 +929,8 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
 
     
 
