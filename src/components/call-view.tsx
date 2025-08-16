@@ -32,12 +32,6 @@ const servers = {
     iceCandidatePoolSize: 10,
 };
 
-// Use a module-level variable to hold the peer connection and local stream
-// This helps prevent issues with React re-renders and stale references.
-let pc: RTCPeerConnection | null = null;
-let localStreamInstance: MediaStream | null = null;
-
-
 const ParticipantVideo = ({ participant, isLocal, stream, isVideoEnabled, isAudioOnly, isMuted }: { participant: { id?: string, name: string, emoji: string }, isLocal: boolean, stream: MediaStream | null, isVideoEnabled: boolean, isAudioOnly: boolean, isMuted?: boolean }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -126,23 +120,33 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
 
   const localVideoContainerRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Use refs for WebRTC objects to prevent re-creation on re-renders
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const callDocRef = useRef<DocumentReference | null>(null);
+  const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { toast } = useToast();
   const isAudioCall = type === 'voice';
   
   const handleEndCall = useCallback(async (isError = false) => {
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
-    
-    if (pc) {
-        pc.close();
-        pc = null;
+    console.log("handleEndCall triggered");
+    if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+        durationTimerRef.current = null;
     }
-    
-    if (localStreamInstance) {
-        localStreamInstance.getTracks().forEach(track => track.stop());
-        localStreamInstance = null;
+
+    if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+        console.log("Local stream stopped");
+    }
+
+    if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+        console.log("Peer connection closed");
     }
     
     setLocalStream(null);
@@ -151,7 +155,10 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     if (callDocRef.current && !isError) {
          try {
             const docSnap = await getDoc(callDocRef.current);
-            if (docSnap.exists()) await deleteDoc(callDocRef.current);
+            if (docSnap.exists()) {
+                await deleteDoc(callDocRef.current);
+                console.log("Call document deleted");
+            }
          } catch (e) {
             console.warn("Could not delete call document:", e)
          }
@@ -164,10 +171,14 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     if (!callId) return;
     callDocRef.current = doc(db, 'calls', callId);
 
+    const subscriptions: (() => void)[] = [];
+
     const startCall = async () => {
-        pc = new RTCPeerConnection(servers);
+        pcRef.current = new RTCPeerConnection(servers);
+        const pc = pcRef.current;
 
         pc.onconnectionstatechange = () => {
+            console.log("Connection state:", pc?.connectionState);
             if(pc?.connectionState === 'connected') {
                 setIsCallConnected(true);
             } else if (pc?.connectionState === 'failed' || pc?.connectionState === 'disconnected' || pc?.connectionState === 'closed') {
@@ -180,12 +191,12 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 video: type === 'video',
                 audio: true,
             });
-            localStreamInstance = stream;
+            localStreamRef.current = stream;
             setLocalStream(stream);
             setHasPermission(true);
 
             stream.getTracks().forEach((track) => {
-                if (pc) pc.addTrack(track, stream);
+                pc.addTrack(track, stream);
             });
         } catch (error) {
             console.error('Error accessing media devices.', error);
@@ -236,15 +247,22 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                     pc.setRemoteDescription(answerDescription);
                 }
             });
+            subscriptions.push(unsubAnswer);
+
             const answerCandidates = collection(callDocRef.current!, 'answerCandidates');
             const unsubAnswerCandidates = onSnapshot(answerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added' && pc) {
-                        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                        try {
+                            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                        } catch (e) {
+                            console.error("Error adding ICE candidate", e);
+                        }
                     }
                 });
             });
-            return () => { unsubAnswer(); unsubAnswerCandidates(); }
+            subscriptions.push(unsubAnswerCandidates);
+
         } else {
             if (!offer || !callDocRef.current) return;
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
@@ -257,36 +275,47 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             const unsubOfferCandidates = onSnapshot(offerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added' && pc) {
-                        pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                       try {
+                            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                        } catch (e) {
+                            console.error("Error adding ICE candidate", e);
+                        }
                     }
                 });
             });
-            return () => { unsubOfferCandidates(); }
+            subscriptions.push(unsubOfferCandidates);
         }
     };
     
-    const unsubPromise = startCall();
+    startCall();
 
     return () => {
-        unsubPromise.then(unsub => {
-            if (unsub) unsub();
-        });
-        
+        console.log("CallView cleanup running");
+        subscriptions.forEach(unsub => unsub());
         handleEndCall();
     };
-  }, [type, user.uid, callId, isCaller, offer, toast, handleEndCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callId]);
   
   useEffect(() => {
     if (isCallConnected) {
-      durationTimerRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
-      }, 1000);
+      if (!durationTimerRef.current) {
+        durationTimerRef.current = setInterval(() => {
+          setCallDuration(prev => prev + 1);
+        }, 1000);
+      }
     } else {
-        if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+        if (durationTimerRef.current) {
+            clearInterval(durationTimerRef.current);
+            durationTimerRef.current = null;
+        }
         setCallDuration(0);
     }
     return () => {
-      if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+        durationTimerRef.current = null;
+      }
     };
   }, [isCallConnected]);
   
@@ -306,24 +335,24 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   };
   
   const toggleMute = () => {
-    localStreamInstance?.getAudioTracks().forEach(track => track.enabled = !track.enabled);
+    localStreamRef.current?.getAudioTracks().forEach(track => track.enabled = !track.enabled);
     setIsMuted(m => !m);
     toast({ title: isMuted ? 'Microphone Unmuted' : 'Microphone Muted'});
   };
 
   const toggleVideo = () => {
-    if (type === 'voice' || !hasPermission || !localStreamInstance) {
+    if (type === 'voice' || !hasPermission || !localStreamRef.current) {
       toast({ variant: 'destructive', title: 'Camera Not Available' });
       return;
     }
-    localStreamInstance.getVideoTracks().forEach(track => track.enabled = !track.enabled);
+    localStreamRef.current.getVideoTracks().forEach(track => track.enabled = !track.enabled);
     setIsVideoEnabled(v => !v);
     toast({ title: isVideoEnabled ? 'Video Off' : 'Video On'});
   };
 
   const switchCamera = async () => {
-    if(!isVideoEnabled || !localStreamInstance || !pc) return;
-    const videoTrack = localStreamInstance.getVideoTracks()[0];
+    if(!isVideoEnabled || !localStreamRef.current || !pcRef.current) return;
+    const videoTrack = localStreamRef.current.getVideoTracks()[0];
     videoTrack.stop(); // Stop current track
 
     try {
@@ -333,12 +362,12 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
         const newVideoTrack = newStream.getVideoTracks()[0];
         
         // Replace the track in the local stream instance
-        localStreamInstance.removeTrack(videoTrack);
-        localStreamInstance.addTrack(newVideoTrack);
-        setLocalStream(new MediaStream(localStreamInstance.getTracks()));
+        localStreamRef.current.removeTrack(videoTrack);
+        localStreamRef.current.addTrack(newVideoTrack);
+        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
         // Replace the track in the peer connection
-        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
         if (sender) {
             await sender.replaceTrack(newVideoTrack);
         }
@@ -347,7 +376,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
         console.error("Error switching camera", err);
         toast({ title: 'Could not switch camera', variant: 'destructive'});
         // Attempt to revert on failure
-        localStreamInstance.addTrack(videoTrack); 
+        localStreamRef.current.addTrack(videoTrack); 
     }
   }
 
