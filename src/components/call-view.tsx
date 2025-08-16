@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -266,30 +267,6 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                         dragElastic={0.1}
                         initial={{ top: 'auto', bottom: 120, right: 20, x:0, y:0 }}
                         dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
-                        onDragEnd={(_, info) => {
-                            const parent = localVideoContainerRef.current;
-                            if (!parent) return;
-                            const { offset, velocity } = info;
-                            const { width, height } = parent.getBoundingClientRect();
-                            const localWidth = 112; // w-28
-                            const localHeight = 160; // h-40
-                            const PADDING = 20;
-
-                            const isTop = offset.y < (height / 2 - localHeight / 2);
-                            const isLeft = offset.x < (width / 2 - localWidth / 2);
-
-                            const newX = isLeft ? PADDING : width - localWidth - PADDING;
-                            const newY = isTop ? PADDING : height - localHeight - PADDING - 100;
-                            
-                            // This is a bit of a hack to get the motion.div to re-render with new styles
-                            const element = (localVideoContainerRef.current?.lastChild as HTMLDivElement)
-                            if(element) {
-                                element.style.top = `${newY}px`;
-                                element.style.left = `${newX}px`;
-                                element.style.right = 'auto';
-                                element.style.bottom = 'auto';
-                            }
-                        }}
                     >
                         <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
                     </motion.div>
