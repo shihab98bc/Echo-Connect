@@ -172,8 +172,6 @@ export default function AppShell() {
                             const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
                             if (tempIndex > -1) {
                                 updatedMessages[tempIndex] = newMsg;
-                            } else {
-                                updatedMessages.push(newMsg);
                             }
                         }
                     } else if (change.type === 'removed') {
@@ -481,12 +479,15 @@ export default function AppShell() {
             const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
             const otherUserDocRef = doc(db, 'users', contactId);
             
+            // --- READS FIRST ---
             const otherUserDoc = await transaction.get(otherUserDocRef);
             if (!otherUserDoc.exists()) {
                 throw new Error("User to be messaged not found");
             }
             const otherUserData = otherUserDoc.data() as AppUser;
+            const otherUserContactDoc = await transaction.get(otherUserContactRef);
 
+            // --- WRITES SECOND ---
             const contactUpdatePayload = {
                  lastMessage: lastMessageText,
                  timestamp: serverTimestamp(),
@@ -501,7 +502,7 @@ export default function AppShell() {
                 isMuted: false,
             }, { merge: true });
 
-            const otherUserContactDoc = await transaction.get(otherUserContactRef);
+            
             if (otherUserContactDoc.exists()) {
                 transaction.update(otherUserContactRef, {
                     ...contactUpdatePayload,
