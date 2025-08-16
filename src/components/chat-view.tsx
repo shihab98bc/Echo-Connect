@@ -60,6 +60,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
   const [newMessage, setNewMessage] = useState('');
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +76,26 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         description: `${feature} has not been implemented yet.`,
     });
   };
+  
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onSendMessage(contact.id, `📄 File: ${file.name}`);
+      toast({
+        title: 'File Sent',
+        description: `${file.name} has been sent.`,
+      });
+    }
+    // Reset file input
+    if(e.target) {
+        e.target.value = '';
+    }
+  };
+
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -142,9 +163,10 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 autoComplete="off"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => handleFeatureNotImplemented('Attach file')}>
+                <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
                     <Paperclip className="h-5 w-5" />
                 </Button>
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
                 <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
                     <CameraIcon className="h-5 w-5" />
                 </Button>
@@ -173,5 +195,3 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     </div>
   );
 }
-
-    
