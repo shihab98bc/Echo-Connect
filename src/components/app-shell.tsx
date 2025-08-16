@@ -157,12 +157,10 @@ export default function AppShell() {
                     const tempId = (change.doc.data() as any).tempId;
                     
                     if (change.type === 'added') {
-                       // Try to find and replace the temp message from optimistic update
                        const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
                        if (tempIndex > -1) {
                            updatedMessages[tempIndex] = newMsg;
                        } else if (!updatedMessages.some(m => m.id === newMsg.id)) {
-                           // If not a replacement and not a duplicate, add it.
                            updatedMessages.push(newMsg);
                        }
                     } else if (change.type === 'modified') {
@@ -170,9 +168,6 @@ export default function AppShell() {
                         if (index > -1) {
                             updatedMessages[index] = { ...updatedMessages[index], ...newMsg };
                         } else {
-                            // This can happen if a message is modified before it's added locally
-                            // (e.g. status update comes before the added event)
-                            // It's safer to just add it if it doesn't exist.
                             updatedMessages.push(newMsg);
                         }
                     } else if (change.type === 'removed') {
@@ -183,7 +178,6 @@ export default function AppShell() {
                     }
                 });
                 
-                // Sort and deduplicate
                 const uniqueMessages = Array.from(new Map(updatedMessages.map(m => [m.id, m])).values());
                 uniqueMessages.sort((a,b) => (a.timestamp as any) - (b.timestamp as any));
 
@@ -464,7 +458,7 @@ export default function AppShell() {
             lastMessageText = finalContentUrl;
         }
 
-        const messagePayload: Omit<Message, 'id'> = {
+        const messagePayload: Partial<Message> = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
@@ -924,5 +918,7 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
 
     
