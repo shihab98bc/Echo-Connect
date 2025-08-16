@@ -24,6 +24,7 @@ interface ChatViewProps {
   onSendMessage: (contactId: string, message: string) => void;
   onOpenProfile: () => void;
   onToggleMute: (contactId: string) => void;
+  onClearChat: (contactId: string) => void;
 }
 
 const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: string; isSent: boolean }) => (
@@ -35,7 +36,7 @@ const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: s
     </div>
 );
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute, onClearChat }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -95,7 +96,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                     <DropdownMenuItem onClick={() => onToggleMute(contact.id)}>
                         {contact.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Clear Chat')}>Clear Chat</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onClearChat(contact.id)}>Clear Chat</DropdownMenuItem>
                     <DropdownMenuItem className="text-destructive" onClick={() => handleFeatureNotImplemented('Block')}>Block</DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>

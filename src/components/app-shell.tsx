@@ -128,6 +128,29 @@ export default function AppShell() {
     });
   };
 
+  const handleClearChat = (contactId: string) => {
+    const contactName = contacts.find(c => c.id === contactId)?.name || 'this contact';
+
+    setMessages(prev => {
+        const newMessages = { ...prev };
+        if (newMessages[contactId]) {
+            newMessages[contactId] = [];
+        }
+        return newMessages;
+    });
+
+    setContacts(prev => prev.map(c => 
+        c.id === contactId 
+        ? { ...c, lastMessage: 'Chat cleared', timestamp: '' } 
+        : c
+    ));
+    
+    toast({
+        title: "Chat Cleared",
+        description: `Your chat history with ${contactName} has been cleared.`,
+    });
+};
+
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
@@ -211,6 +234,7 @@ export default function AppShell() {
             onSendMessage={handleSendMessage}
             onOpenProfile={() => setProfileViewOpen(true)}
             onToggleMute={handleToggleMute}
+            onClearChat={handleClearChat}
           />
         );
       case 'call':
