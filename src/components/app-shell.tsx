@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -50,6 +51,7 @@ export type Message = {
   caption?: string;
   duration?: number;
   status?: 'sent' | 'delivered' | 'seen';
+  tempId?: string;
 };
 
 export type Call = { 
@@ -137,18 +139,44 @@ export default function AppShell() {
           const messagesQuery = query(messagesRef, orderBy('timestamp', 'asc'));
 
           const unsubMessages = onSnapshot(messagesQuery, (msgSnapshot) => {
-            const newMessages = msgSnapshot.docChanges().map(change => ({id: change.doc.id, ...change.doc.data()} as Message));
-            setMessages(prev => {
-                const updatedMessages = [...(prev[contact.id] || [])];
-                newMessages.forEach(newMsg => {
-                    const index = updatedMessages.findIndex(m => m.id === newMsg.id);
-                    if (index > -1) {
-                        updatedMessages[index] = newMsg;
-                    } else {
-                        updatedMessages.push(newMsg);
+             const changedDocs = msgSnapshot.docChanges();
+             if (changedDocs.length === 0) return;
+
+             setMessages(prev => {
+                const existingMessages = prev[contact.id] || [];
+                const updatedMessages = [...existingMessages];
+
+                changedDocs.forEach(change => {
+                    const newMsg = {id: change.doc.id, ...change.doc.data()} as Message;
+                    const tempId = (change.doc.data() as any).tempId;
+                    
+                    if (change.type === 'added') {
+                       // Try to find and replace the temp message from optimistic update
+                       const tempIndex = tempId ? updatedMessages.findIndex(m => m.id === tempId) : -1;
+                       if (tempIndex > -1) {
+                           updatedMessages[tempIndex] = newMsg;
+                       } else if (!updatedMessages.some(m => m.id === newMsg.id)) {
+                           // If not a replacement and not a duplicate, add it.
+                           updatedMessages.push(newMsg);
+                       }
+                    } else if (change.type === 'modified') {
+                        const index = updatedMessages.findIndex(m => m.id === newMsg.id);
+                        if (index > -1) {
+                            updatedMessages[index] = newMsg;
+                        }
+                    } else if (change.type === 'removed') {
+                        const index = updatedMessages.findIndex(m => m.id === newMsg.id);
+                        if (index > -1) {
+                            updatedMessages.splice(index, 1);
+                        }
                     }
                 });
-                return { ...prev, [contact.id]: updatedMessages.sort((a,b) => (a.timestamp as any) - (b.timestamp as any)) };
+                
+                // Sort and deduplicate
+                const uniqueMessages = Array.from(new Map(updatedMessages.map(m => [m.id, m])).values());
+                uniqueMessages.sort((a,b) => (a.timestamp as any) - (b.timestamp as any));
+
+                return { ...prev, [contact.id]: uniqueMessages };
             });
             
             const batch = writeBatch(db);
@@ -401,7 +429,7 @@ export default function AppShell() {
 
     setMessages(prev => ({
         ...prev,
-        [contactId]: [...(prev[contactId] || []), optimisticMessage],
+        [contactId]: [...(prev[contactId] || [])],
     }));
 
     try {
@@ -424,20 +452,22 @@ export default function AppShell() {
             lastMessageText = finalContentUrl;
         }
 
-        const messagePayload: Omit<Message, 'id' | 'caption' | 'duration'> & { caption?: string, duration?: number } = {
+        const messagePayload: Omit<Message, 'id'> = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
             type: type,
-            status: 'sent', // Initially sent
+            status: 'sent',
+            tempId: tempId,
         };
-
+        
         if (options.caption) {
           messagePayload.caption = options.caption;
         }
         if (options.duration) {
           messagePayload.duration = options.duration;
         }
+
 
         const batch = writeBatch(db);
         const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
@@ -477,14 +507,8 @@ export default function AppShell() {
 
 
         await batch.commit();
-
-        setMessages(prev => {
-            const updatedContactMessages = prev[contactId].map(msg => 
-                msg.id === tempId ? { ...msg, id: newMessageRef.id, text: finalContentUrl, status: 'sent' } : msg
-            );
-            return { ...prev, [contactId]: updatedContactMessages };
-        });
-
+        // The optimistic message is now confirmed and will be updated by the Firestore listener
+        
     } catch (error) {
         console.error("Error sending message:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
@@ -891,3 +915,5 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
