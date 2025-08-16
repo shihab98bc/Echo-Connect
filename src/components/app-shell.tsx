@@ -101,18 +101,24 @@ export default function AppShell() {
   const unsubscribeRefs = useRef<(() => void)[]>([]);
 
   const handleEndCall = useCallback(() => {
+    if (activeCall?.callId) {
+        const callRef = doc(db, 'calls', activeCall.callId);
+        getDoc(callRef).then(docSnap => {
+            if (docSnap.exists()) {
+                deleteDoc(callRef);
+            }
+        });
+    }
+
     setActiveCall(null);
     setCallToAnswer(null);
     setView(prevView => {
-        // Only switch view if we are in the 'call' view.
-        // This prevents race conditions where an ended call might
-        // incorrectly pull the user out of a chat they just opened.
         if (prevView === 'call') {
             return activeChat ? 'chat' : 'main';
         }
         return prevView;
     });
-}, [activeChat]);
+}, [activeChat, activeCall]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     const userDocRef = doc(db, 'users', uid);
@@ -162,7 +168,12 @@ export default function AppShell() {
                     } else if (change.type === 'modified') {
                         const index = updatedMessages.findIndex(m => m.id === newMsg.id);
                         if (index > -1) {
-                            updatedMessages[index] = newMsg;
+                            updatedMessages[index] = { ...updatedMessages[index], ...newMsg };
+                        } else {
+                            // This can happen if a message is modified before it's added locally
+                            // (e.g. status update comes before the added event)
+                            // It's safer to just add it if it doesn't exist.
+                            updatedMessages.push(newMsg);
                         }
                     } else if (change.type === 'removed') {
                         const index = updatedMessages.findIndex(m => m.id === newMsg.id);
@@ -399,7 +410,7 @@ export default function AppShell() {
         console.error("Error marking messages as seen:", error);
       }
     }
-  }, [currentUser, messages, toast, setActiveChat, setView]);
+  }, [currentUser, messages, toast]);
 
   const handleSendMessage = useCallback(async (contactId: string, content: string | File, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
@@ -418,6 +429,7 @@ export default function AppShell() {
 
     const optimisticMessage: Message = {
         id: tempId,
+        tempId: tempId,
         sender: currentUser.uid,
         text: optimisticContent,
         timestamp: new Date(),
@@ -429,7 +441,7 @@ export default function AppShell() {
 
     setMessages(prev => ({
         ...prev,
-        [contactId]: [...(prev[contactId] || [])],
+        [contactId]: [...(prev[contactId] || []), optimisticMessage],
     }));
 
     try {
@@ -442,7 +454,7 @@ export default function AppShell() {
 
             if (content instanceof File) {
                 await uploadBytes(storageRef, content);
-            } else {
+            } else { // It's a data URL string for audio
                 await uploadString(storageRef, content, 'data_url');
             }
             finalContentUrl = await getDownloadURL(storageRef);
@@ -461,12 +473,8 @@ export default function AppShell() {
             tempId: tempId,
         };
         
-        if (options.caption) {
-          messagePayload.caption = options.caption;
-        }
-        if (options.duration) {
-          messagePayload.duration = options.duration;
-        }
+        if (options.caption) messagePayload.caption = options.caption;
+        if (options.duration) messagePayload.duration = options.duration;
 
 
         const batch = writeBatch(db);
@@ -477,23 +485,25 @@ export default function AppShell() {
         const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
         
         const otherUserSnap = await getDoc(doc(db, 'users', contactId));
-        const otherUserData = otherUserSnap.data() as AppUser;
-
-
+        
         const contactUpdatePayload = {
              lastMessage: lastMessageText,
              timestamp: serverTimestamp(),
         }
 
-        const currentUserContactUpdate = {
-            ...contactUpdatePayload,
-            name: otherUserData.name,
-            emoji: otherUserData.emoji,
-            photoURL: otherUserData.photoURL,
-            isMuted: false,
-            unread: 0,
-        };
-        batch.set(userContactRef, currentUserContactUpdate, { merge: true });
+        if (otherUserSnap.exists()) {
+            const otherUserData = otherUserSnap.data() as AppUser;
+            const currentUserContactUpdate = {
+                ...contactUpdatePayload,
+                name: otherUserData.name,
+                emoji: otherUserData.emoji,
+                photoURL: otherUserData.photoURL,
+                isMuted: false,
+                unread: 0,
+            };
+            batch.set(userContactRef, currentUserContactUpdate, { merge: true });
+        }
+
 
         const otherUserContactUpdate = {
             ...contactUpdatePayload,
@@ -507,7 +517,6 @@ export default function AppShell() {
 
 
         await batch.commit();
-        // The optimistic message is now confirmed and will be updated by the Firestore listener
         
     } catch (error) {
         console.error("Error sending message:", error);
@@ -715,7 +724,7 @@ export default function AppShell() {
       console.error("Error deleting chat:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not delete chat.' });
     }
-  }, [currentUser, toast, activeChat, setView, setActiveChat]);
+  }, [currentUser, toast, activeChat, setActiveChat]);
 
   const handleToggleChatSelection = useCallback((contactId: string) => {
     setSelectedChats(prev => 
