@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BackIcon, VoiceCallIcon, VideoCallIcon, MoreOptionsIcon, SendIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface ChatViewProps {
   user: AppUser;
@@ -14,7 +20,8 @@ interface ChatViewProps {
   messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
-  onSendMessage: (contactId: string, message: Message) => void;
+  onSendMessage: (contactId: string, message: string) => void;
+  onOpenProfile: () => void;
 }
 
 const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: string; isSent: boolean }) => (
@@ -26,21 +33,26 @@ const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: s
     </div>
 );
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim()) {
-      const message: Message = {
-        sender: user.uid,
-        text: newMessage.trim(),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      onSendMessage(contact.id, message);
+      onSendMessage(contact.id, newMessage.trim());
       setNewMessage('');
     }
   };
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+        const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+        if (viewport) {
+            viewport.scrollTop = viewport.scrollHeight;
+        }
+    }
+  }, [messages]);
 
   return (
     <div className="w-full h-full flex flex-col bg-chat-pattern">
@@ -48,10 +60,12 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         <Button variant="ghost" size="icon" onClick={onBack} className="text-icon-color hover:bg-white/20">
           <BackIcon className="h-6 w-6" />
         </Button>
-        <Avatar className="h-10 w-10 text-xl">
-          <AvatarFallback>{contact.emoji}</AvatarFallback>
-        </Avatar>
-        <p className="font-semibold flex-grow truncate">{contact.name}</p>
+        <div className="flex items-center gap-3 flex-grow" onClick={onOpenProfile}>
+          <Avatar className="h-10 w-10 text-xl cursor-pointer">
+            <AvatarFallback>{contact.emoji}</AvatarFallback>
+          </Avatar>
+          <p className="font-semibold truncate cursor-pointer">{contact.name}</p>
+        </div>
         <div className="flex items-center">
             <Button variant="ghost" size="icon" onClick={() => onStartCall(contact, 'voice')} className="text-icon-color hover:bg-white/20">
                 <VoiceCallIcon className="h-6 w-6" />
@@ -59,13 +73,24 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
             <Button variant="ghost" size="icon" onClick={() => onStartCall(contact, 'video')} className="text-icon-color hover:bg-white/20">
                 <VideoCallIcon className="h-6 w-6" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-icon-color hover:bg-white/20">
-                <MoreOptionsIcon className="h-6 w-6" />
-            </Button>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-icon-color hover:bg-white/20">
+                        <MoreOptionsIcon className="h-6 w-6" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={onOpenProfile}>View Contact</DropdownMenuItem>
+                    <DropdownMenuItem>Search</DropdownMenuItem>
+                    <DropdownMenuItem>Mute Notifications</DropdownMenuItem>
+                    <DropdownMenuItem>Clear Chat</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive">Block</DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </header>
 
-      <ScrollArea className="flex-grow p-4">
+      <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((msg, index) => (
             <MessageBubble key={index} text={msg.text} timestamp={msg.timestamp} isSent={msg.sender === user.uid} />
@@ -81,6 +106,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type a message..." 
             className="flex-grow rounded-full bg-white"
+            autoComplete="off"
           />
           <Button type="submit" size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12">
             <SendIcon className="h-6 w-6 text-white" />

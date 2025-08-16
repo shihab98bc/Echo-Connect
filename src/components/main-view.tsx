@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AddFriendIcon, MenuIcon, VideoCallIcon, VoiceCallIcon } from '@/components/icons';
+import { AddFriendIcon, MenuIcon, VideoCallIcon, VoiceCallIcon, CheckIcon, XIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { ArrowDownLeftIcon, ArrowUpRightIcon } from 'lucide-react';
 
 interface MainViewProps {
   user: AppUser;
@@ -22,14 +23,14 @@ interface MainViewProps {
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
 }
 
-const ListItem = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-    <div className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)}>{children}</div>
+const ListItem = ({ children, className, ...props }: { children: React.ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>) => (
+    <div className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)} {...props}>{children}</div>
 );
 
 const ContactItem = ({ contact, onStartChat }: { contact: Contact; onStartChat: (contact: Contact) => void; }) => (
-    <ListItem>
-        <div className="flex items-center gap-4 flex-grow" onClick={() => onStartChat(contact)}>
-            <Avatar className="h-12 w-12 text-2xl">
+    <ListItem onClick={() => onStartChat(contact)}>
+        <div className="flex items-center gap-4 flex-grow min-w-0">
+            <Avatar className="h-12 w-12 text-2xl flex-shrink-0">
                 <AvatarFallback>{contact.emoji}</AvatarFallback>
             </Avatar>
             <div className="flex-grow overflow-hidden">
@@ -37,7 +38,7 @@ const ContactItem = ({ contact, onStartChat }: { contact: Contact; onStartChat: 
                 <p className="text-sm text-muted-foreground truncate">{contact.lastMessage}</p>
             </div>
         </div>
-        <div className="text-right flex flex-col items-end gap-1">
+        <div className="text-right flex flex-col items-end gap-1 ml-2 flex-shrink-0">
             <p className="text-xs text-accent">{contact.timestamp}</p>
             {contact.unread > 0 && <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center">{contact.unread}</Badge>}
         </div>
@@ -56,7 +57,7 @@ const CallLogItem = ({ call, onStartCall }: { call: Call; onStartCall: (contact:
                     <p className={`font-semibold ${call.status === 'missed' ? 'text-destructive' : ''}`}>{call.contact.name}</p>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         {call.status === 'incoming' && <ArrowDownLeftIcon className="h-4 w-4 text-green-500" />}
-                        {call.status === 'outgoing' && <ArrowUpRightIcon className="h-4 w-4 text-blue-500" />}
+                        {call.status === 'outgoing' && <ArrowUpRightIcon className="h-4 w-4" />}
                         {call.status === 'missed' && <ArrowDownLeftIcon className="h-4 w-4 text-destructive" />}
                         <p>{isGroupCall && 'Group Call |'} {call.time}</p>
                     </div>
@@ -80,8 +81,12 @@ const UpdateItem = ({ update, onAccept, onReject }: { update: Update, onAccept: 
                         <p>{update.from.name}</p>
                     </div>
                     <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => onReject(update)}>Reject</Button>
-                        <Button size="sm" onClick={() => onAccept(update)}>Accept</Button>
+                        <Button size="icon" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => onReject(update)}>
+                            <XIcon className="h-6 w-6"/>
+                        </Button>
+                        <Button size="icon" variant="ghost" className="text-green-600 hover:bg-green-600/10" onClick={() => onAccept(update)}>
+                            <CheckIcon className="h-6 w-6"/>
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -115,13 +120,25 @@ export default function MainView({ user, contacts, updates, calls, onStartChat, 
         <div className="flex-grow overflow-hidden">
             <ScrollArea className="h-full">
                 <TabsContent value="chats">
-                    {contacts.map(contact => <ContactItem key={contact.id} contact={contact} onStartChat={onStartChat} />)}
+                    {contacts.length > 0 ? (
+                        contacts.map(contact => <ContactItem key={contact.id} contact={contact} onStartChat={onStartChat} />)
+                    ) : (
+                        <div className="text-center text-muted-foreground p-8">No chats yet. Add a friend to start chatting!</div>
+                    )}
                 </TabsContent>
                 <TabsContent value="updates" className="p-4 space-y-4">
-                    {updates.map((update, i) => <UpdateItem key={i} update={update} onAccept={onAcceptRequest} onReject={onRejectRequest} />)}
+                     {updates.length > 0 ? (
+                        updates.map((update, i) => <UpdateItem key={update.id || i} update={update} onAccept={onAcceptRequest} onReject={onRejectRequest} />)
+                     ) : (
+                        <div className="text-center text-muted-foreground p-8">No new updates.</div>
+                     )}
                 </TabsContent>
                 <TabsContent value="calls">
-                    {calls.map((call, i) => <CallLogItem key={i} call={call} onStartCall={onStartCall} />)}
+                     {calls.length > 0 ? (
+                        calls.map((call, i) => <CallLogItem key={call.id || i} call={call} onStartCall={onStartCall} />)
+                    ) : (
+                        <div className="text-center text-muted-foreground p-8">No recent calls.</div>
+                    )}
                 </TabsContent>
             </ScrollArea>
         </div>
@@ -129,16 +146,3 @@ export default function MainView({ user, contacts, updates, calls, onStartChat, 
     </div>
   );
 }
-
-// Dummy icons for call logs
-const ArrowDownLeftIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 4.5 4.5 19.5m0-15v15h15" />
-    </svg>
-);
-  
-const ArrowUpRightIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25" />
-    </svg>
-);

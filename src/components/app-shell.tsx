@@ -59,6 +59,9 @@ export default function AppShell() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setView('auth');
+    setActiveChat(null);
+    setActiveCall(null);
+    setIncomingCall(null);
   };
 
   const handleProfileSave = (name: string, emoji: string) => {
@@ -78,7 +81,18 @@ export default function AppShell() {
     setView('call');
   };
 
-  const handleSendMessage = (contactId: string, message: Message) => {
+  const handleEndCall = () => {
+    setActiveCall(null);
+    setView(activeChat ? 'chat' : 'main');
+  };
+
+  const handleSendMessage = (contactId: string, messageText: string) => {
+    const message: Message = {
+      sender: mockUser.uid,
+      text: messageText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
     setMessages(prev => {
         const newMessages = { ...prev };
         if (!newMessages[contactId]) {
@@ -90,9 +104,9 @@ export default function AppShell() {
 
     setContacts(prev => prev.map(c => 
         c.id === contactId 
-        ? { ...c, lastMessage: message.text, timestamp: message.timestamp }
+        ? { ...c, lastMessage: message.text, timestamp: message.timestamp, unread: 0 }
         : c
-    ));
+    ).sort((a,b) => a.id === contactId ? -1 : b.id === contactId ? 1 : 0));
   };
 
 
@@ -107,7 +121,7 @@ export default function AppShell() {
         unread: 0,
     };
     setContacts(prev => [newContact, ...prev]);
-    setUpdates(prev => prev.filter(u => u !== request));
+    setUpdates(prev => prev.filter(u => u.id !== request.id));
     toast({
         title: "Friend Request Accepted",
         description: `You are now connected with ${request.from.name}.`
@@ -116,17 +130,18 @@ export default function AppShell() {
 
   const handleRejectRequest = (request: Update) => {
     if (request.type !== 'request') return;
-     setUpdates(prev => prev.filter(u => u !== request));
+     setUpdates(prev => prev.filter(u => u.id !== request.id));
      toast({
         title: "Friend Request Rejected",
         description: `You have rejected the request from ${request.from.name}.`
     });
   };
 
+  // Simulate receiving an incoming call for demo purposes
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isAuthenticated && !incomingCall && !activeCall) {
-        const nextCall = mockCalls.find(c => c.status === 'incoming');
+        const nextCall = mockCalls.find(c => c.status === 'incoming' && c.id === 'call3');
         if (nextCall) {
             setIncomingCall(nextCall);
         }
@@ -134,6 +149,7 @@ export default function AppShell() {
     }, 10000);
     return () => clearTimeout(timer);
   }, [isAuthenticated, incomingCall, activeCall]);
+
 
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
@@ -167,9 +183,13 @@ export default function AppShell() {
             user={mockUser}
             contact={activeChat}
             messages={messages[activeChat.id] || []}
-            onBack={() => setView('main')}
+            onBack={() => {
+              setActiveChat(null);
+              setView('main');
+            }}
             onStartCall={handleStartCall}
             onSendMessage={handleSendMessage}
+            onOpenProfile={() => setProfileViewOpen(true)}
           />
         );
       case 'call':
@@ -179,10 +199,7 @@ export default function AppShell() {
             user={mockUser}
             contact={activeCall.contact}
             type={activeCall.type}
-            onEndCall={() => {
-              setActiveCall(null);
-              setView(activeChat ? 'chat' : 'main');
-            }}
+            onEndCall={handleEndCall}
           />
         );
       default:
@@ -221,6 +238,10 @@ export default function AppShell() {
           }}
           onReject={() => {
             setIncomingCall(null);
+            toast({
+              title: "Call Rejected",
+              description: `You rejected the call from ${incomingCall.contact.name}.`,
+            });
           }}
         />
       )}

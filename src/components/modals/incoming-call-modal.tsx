@@ -14,15 +14,20 @@ interface IncomingCallModalProps {
 
 export default function IncomingCallModal({ call, onAccept, onReject }: IncomingCallModalProps) {
   return (
-    <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
       <motion.div 
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.8, opacity: 0 }}
-        className="bg-secondary rounded-xl p-8 shadow-2xl w-full max-w-sm text-center"
+        initial={{ scale: 0.8, opacity: 0, y: 50 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.8, opacity: 0, y: 50 }}
+        className="bg-gradient-to-br from-secondary to-background rounded-2xl p-8 shadow-2xl w-full max-w-sm text-center border border-white/10"
       >
-        <Avatar className="h-24 w-24 text-6xl mx-auto mb-4 border-4 border-white/50">
-            <AvatarFallback>{call.contact.emoji}</AvatarFallback>
+        <Avatar className="h-24 w-24 text-6xl mx-auto mb-4 border-4 border-white/50 shadow-lg">
+            <AvatarFallback className="bg-muted">{call.contact.emoji}</AvatarFallback>
         </Avatar>
         <h2 className="text-2xl font-bold font-headline">{call.contact.name}</h2>
         <div className="flex items-center justify-center gap-2 mt-2 text-muted-foreground">
@@ -52,6 +57,6 @@ export default function IncomingCallModal({ call, onAccept, onReject }: Incoming
             </div>
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 }
