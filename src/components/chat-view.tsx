@@ -23,6 +23,7 @@ interface ChatViewProps {
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
   onSendMessage: (contactId: string, message: string) => void;
   onOpenProfile: () => void;
+  onToggleMute: (contactId: string) => void;
 }
 
 const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: string; isSent: boolean }) => (
@@ -34,7 +35,7 @@ const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: s
     </div>
 );
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onToggleMute }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -91,7 +92,9 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={onOpenProfile}>View Contact</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Search')}>Search</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Mute Notifications')}>Mute Notifications</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onToggleMute(contact.id)}>
+                        {contact.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleFeatureNotImplemented('Clear Chat')}>Clear Chat</DropdownMenuItem>
                     <DropdownMenuItem className="text-destructive" onClick={() => handleFeatureNotImplemented('Block')}>Block</DropdownMenuItem>
                 </DropdownMenuContent>

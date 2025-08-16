@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AddFriendIcon, MenuIcon, VideoCallIcon, VoiceCallIcon, CheckIcon, XIcon } from '@/components/icons';
+import { AddFriendIcon, MenuIcon, VideoCallIcon, VoiceCallIcon, CheckIcon, XIcon, MutedIcon } from '@/components/icons';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { ArrowDownLeftIcon, ArrowUpRightIcon } from 'lucide-react';
@@ -40,7 +40,13 @@ const ContactItem = ({ contact, onStartChat }: { contact: Contact; onStartChat: 
         </div>
         <div className="text-right flex flex-col items-end gap-1 ml-2 flex-shrink-0">
             <p className="text-xs text-accent">{contact.timestamp}</p>
-            {contact.unread > 0 && <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center">{contact.unread}</Badge>}
+            <div className="h-6 flex items-center justify-center">
+            {contact.unread > 0 ? (
+                <Badge className="bg-accent text-accent-foreground w-6 h-6 flex items-center justify-center">{contact.unread}</Badge>
+            ) : contact.isMuted ? (
+                <MutedIcon className="h-5 w-5 text-muted-foreground" />
+            ) : null}
+            </div>
         </div>
     </ListItem>
 );

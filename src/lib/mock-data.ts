@@ -9,8 +9,8 @@ export const mockUser = {
 };
   
 export const mockContacts = [
-    { id: 'user2', name: 'Zoe Lee', emoji: '🎨', lastMessage: 'See you tomorrow!', timestamp: '10:48 AM', unread: 2 },
-    { id: 'user3', name: 'Ben Carter', emoji: '🚀', lastMessage: 'The project is looking great. Good job!', timestamp: '9:15 AM', unread: 0 },
+    { id: 'user2', name: 'Zoe Lee', emoji: '🎨', lastMessage: 'See you tomorrow!', timestamp: '10:48 AM', unread: 2, isMuted: false },
+    { id: 'user3', name: 'Ben Carter', emoji: '🚀', lastMessage: 'The project is looking great. Good job!', timestamp: '9:15 AM', unread: 0, isMuted: false },
     { 
         id: 'group1', 
         name: 'Design Team', 
@@ -19,6 +19,7 @@ export const mockContacts = [
         timestamp: '11:30 AM', 
         unread: 5,
         isGroup: true,
+        isMuted: false,
         members: [
             { id: 'user1', name: 'Alex Ray', emoji: '😎' },
             { id: 'user2', name: 'Zoe Lee', emoji: '🎨' },
@@ -26,9 +27,9 @@ export const mockContacts = [
             { id: 'user4', name: 'Mia Wong', emoji: '🌟' },
         ]
     },
-    { id: 'user4', name: 'Mia Wong', emoji: '🌟', lastMessage: 'Can you send me the file?', timestamp: 'Yesterday', unread: 0 },
-    { id: 'user5', name: 'Leo Martinez', emoji: '🎸', lastMessage: 'Let\'s practice this weekend.', timestamp: 'Yesterday', unread: 1 },
-    { id: 'user6', name: 'Eva Chen', emoji: '💡', lastMessage: 'I have an idea for the new feature.', timestamp: 'Friday', unread: 0 },
+    { id: 'user4', name: 'Mia Wong', emoji: '🌟', lastMessage: 'Can you send me the file?', timestamp: 'Yesterday', unread: 0, isMuted: true },
+    { id: 'user5', name: 'Leo Martinez', emoji: '🎸', lastMessage: 'Let\'s practice this weekend.', timestamp: 'Yesterday', unread: 1, isMuted: false },
+    { id: 'user6', name: 'Eva Chen', emoji: '💡', lastMessage: 'I have an idea for the new feature.', timestamp: 'Friday', unread: 0, isMuted: false },
     { 
         id: 'group2', 
         name: 'Weekend Jam', 
@@ -37,6 +38,7 @@ export const mockContacts = [
         timestamp: 'Wednesday', 
         unread: 0,
         isGroup: true,
+        isMuted: true,
         members: [
             { id: 'user1', name: 'Alex Ray', emoji: '😎' },
             { id: 'user5', name: 'Leo Martinez', emoji: '🎸' },

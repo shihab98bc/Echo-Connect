@@ -109,6 +109,25 @@ export default function AppShell() {
     ).sort((a,b) => a.id === contactId ? -1 : b.id === contactId ? 1 : 0));
   };
 
+  const handleToggleMute = (contactId: string) => {
+    let contactName = '';
+    let isMuted: boolean | undefined = false;
+    
+    setContacts(prev => prev.map(c => {
+        if (c.id === contactId) {
+            contactName = c.name;
+            isMuted = !c.isMuted;
+            return { ...c, isMuted: !c.isMuted };
+        }
+        return c;
+    }));
+
+    toast({
+        title: isMuted ? "Notifications Muted" : "Notifications Unmuted",
+        description: `You will no longer receive notifications from ${contactName}.`,
+    });
+  };
+
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
@@ -119,6 +138,7 @@ export default function AppShell() {
         lastMessage: 'Say hi!',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         unread: 0,
+        isMuted: false,
     };
     setContacts(prev => [newContact, ...prev]);
     setUpdates(prev => prev.filter(u => u.id !== request.id));
@@ -190,6 +210,7 @@ export default function AppShell() {
             onStartCall={handleStartCall}
             onSendMessage={handleSendMessage}
             onOpenProfile={() => setProfileViewOpen(true)}
+            onToggleMute={handleToggleMute}
           />
         );
       case 'call':
