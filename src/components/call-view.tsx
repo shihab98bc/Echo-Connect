@@ -282,7 +282,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                 >
-                    <div className="absolute inset-0 w-full h-full" onClick={e => e.stopPropagation()}>
+                    <div className="absolute inset-0 w-full h-full" onClick={e => { e.stopPropagation(); toggleControls(); }}>
                        <ParticipantVideo participant={contact} isLocal={false} videoStream={null} isVideoEnabled={isVideoEnabled} isAudioOnly={false}/>
                     </div>
 
