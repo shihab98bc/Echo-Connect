@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { CameraIcon, Check, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
@@ -103,6 +103,9 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Camera</DialogTitle>
+          </DialogHeader>
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
             <AnimatePresence>
               {hasPermission === null && (
@@ -174,5 +177,3 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     </Dialog>
   );
 }
-
-    
