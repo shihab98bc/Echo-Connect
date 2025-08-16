@@ -9,12 +9,6 @@ import { auth } from '@/lib/firebase';
 import { GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 
-interface AuthViewProps {
-  onLogin: () => void;
-  onSignup: () => void;
-  onGoogleSignIn: () => void;
-}
-
 const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="24px" height="24px" {...props}>
         <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
@@ -24,7 +18,7 @@ const GoogleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
-const AuthForm = ({ isLogin, onLogin, onSignup, onGoogleSignIn }: { isLogin: boolean; onLogin: () => void; onSignup: () => void; onGoogleSignIn: () => void; }) => {
+const AuthForm = ({ isLogin }: { isLogin: boolean; }) => {
     const { toast } = useToast();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -36,11 +30,9 @@ const AuthForm = ({ isLogin, onLogin, onSignup, onGoogleSignIn }: { isLogin: boo
         try {
             if (isLogin) {
                 await signInWithEmailAndPassword(auth, email, password);
-                onLogin();
             } else {
                 await createUserWithEmailAndPassword(auth, email, password);
                 // In a real app, you'd likely want to update the user's profile with the name here.
-                onSignup();
             }
         } catch (error: any) {
             toast({
@@ -51,6 +43,19 @@ const AuthForm = ({ isLogin, onLogin, onSignup, onGoogleSignIn }: { isLogin: boo
         }
     };
     
+    const handleGoogleSignIn = async () => {
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(auth, provider);
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Google Sign-In Failed',
+                description: error.message,
+            });
+        }
+    };
+
     return (
         <motion.div
             key={isLogin ? 'login' : 'signup'}
@@ -91,7 +96,7 @@ const AuthForm = ({ isLogin, onLogin, onSignup, onGoogleSignIn }: { isLogin: boo
                         <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
                     </div>
                 </div>
-                <Button variant="outline" type="button" className="w-full font-bold" onClick={onGoogleSignIn}>
+                <Button variant="outline" type="button" className="w-full font-bold" onClick={handleGoogleSignIn}>
                     <GoogleIcon className="mr-2 h-5 w-5"/>
                     Google
                 </Button>
@@ -100,25 +105,9 @@ const AuthForm = ({ isLogin, onLogin, onSignup, onGoogleSignIn }: { isLogin: boo
     );
 }
 
-export default function AuthView({ onLogin, onSignup }: AuthViewProps) {
+export default function AuthView() {
   const [isLoginView, setIsLoginView] = useState(true);
-  const { toast } = useToast();
-
-  const handleGoogleSignIn = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-        await signInWithPopup(auth, provider);
-        // onAuthStateChanged will handle the view transition
-    } catch (error: any) {
-        toast({
-            variant: 'destructive',
-            title: 'Google Sign-In Failed',
-            description: error.message,
-        });
-    }
-  };
-
-
+  
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-background p-8">
       <div className="w-full max-w-sm space-y-6">
@@ -128,9 +117,6 @@ export default function AuthView({ onLogin, onSignup }: AuthViewProps) {
             <AnimatePresence mode="wait">
                 <AuthForm 
                     isLogin={isLoginView} 
-                    onLogin={onLogin} 
-                    onSignup={onSignup}
-                    onGoogleSignIn={handleGoogleSignIn}
                 />
             </AnimatePresence>
         </div>

@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Send, SwitchCamera, X } from 'lucide-react';
+import { Camera, Send, SwitchCamera, X, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface CameraModalProps {
   isOpen: boolean;
@@ -16,54 +17,60 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
 
   const cleanupCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
-    setStream(null);
-  }, [stream]);
+  }, []);
+
+  const getCameraStream = useCallback(async (front: boolean) => {
+    cleanupCamera();
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: front ? 'user' : 'environment' },
+      });
+      streamRef.current = newStream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+      }
+      setHasPermission(true);
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasPermission(false);
+      toast({
+        variant: 'destructive',
+        title: 'Camera Access Denied',
+        description: 'Please enable camera permissions in your browser settings.',
+      });
+    }
+  }, [cleanupCamera, toast]);
+
 
   useEffect(() => {
-    const getCameraStream = async (front: boolean) => {
-      cleanupCamera();
-      try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: front ? 'user' : 'environment' },
-        });
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = newStream;
+    if (isOpen) {
+        if (!photoDataUrl) {
+            getCameraStream(isFrontCamera);
         }
-
-        setStream(newStream);
-        setHasPermission(true);
-      } catch (error) {
-        console.error('Error accessing camera:', error);
-        setHasPermission(false);
-        toast({
-          variant: 'destructive',
-          title: 'Camera Access Denied',
-          description: 'Please enable camera permissions in your browser settings.',
-        });
-        onClose();
-      }
-    };
-
-    if (isOpen && !photoDataUrl) {
-      getCameraStream(isFrontCamera);
+    } else {
+        cleanupCamera();
+        setPhotoDataUrl(null); // Reset when closing
     }
 
     return () => {
-      if (isOpen && !photoDataUrl) {
-        cleanupCamera();
+      // Ensure cleanup happens on unmount if modal is open
+      if (isOpen) {
+          cleanupCamera();
       }
     };
-  }, [isOpen, isFrontCamera, photoDataUrl, toast, onClose, cleanupCamera]);
+  }, [isOpen, isFrontCamera, photoDataUrl, getCameraStream, cleanupCamera]);
 
   const handleCapture = () => {
     if (videoRef.current && canvasRef.current) {
@@ -92,26 +99,24 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
 
   const handleRetake = () => {
     setPhotoDataUrl(null);
+    // getCameraStream will be called by the useEffect
   };
 
   const handleSend = () => {
     if (photoDataUrl) {
       onSendPhoto(photoDataUrl);
-      setPhotoDataUrl(null); // Reset for next time
-      onClose();
+      onClose(); // This will also trigger cleanup
     }
   };
   
   const handleClose = () => {
-      cleanupCamera();
-      setPhotoDataUrl(null);
       onClose();
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-md w-full p-0 gap-0">
-        <DialogHeader className="p-4">
+        <DialogHeader className="p-4 border-b">
           <DialogTitle>Send a Photo</DialogTitle>
           <DialogClose asChild>
             <Button variant="ghost" size="icon" className="absolute right-4 top-3 h-7 w-7">
@@ -128,11 +133,17 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
             <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
           )}
           {hasPermission === false && (
-            <p className="text-white">Camera permission denied.</p>
+             <Alert variant="destructive" className="m-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Camera Permission Denied</AlertTitle>
+              <AlertDescription>
+                Please enable camera access in your browser settings to use this feature.
+              </AlertDescription>
+            </Alert>
           )}
         </div>
 
-        <div className="p-4 flex justify-center items-center gap-4">
+        <div className="p-4 flex justify-center items-center gap-4 bg-secondary border-t">
           {photoDataUrl ? (
             <>
               <Button variant="outline" onClick={handleRetake}>Retake</Button>

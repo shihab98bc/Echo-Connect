@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { auth, db, storage } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
 import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment, deleteDoc, runTransaction } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadString, deleteObject } from 'firebase/storage';
+import { getDownloadURL, ref, uploadBytes, uploadString } from 'firebase/storage';
 
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
@@ -111,48 +111,6 @@ export default function AppShell() {
         return prevView;
     });
 }, [activeChat]);
-
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-        unsubscribeRefs.current.forEach(unsub => unsub());
-        unsubscribeRefs.current = [];
-
-        if (firebaseUser) {
-            const userDocRef = doc(db, 'users', firebaseUser.uid);
-            const userDocSnap = await getDoc(userDocRef);
-
-            if (userDocSnap.exists()) {
-                const userData = userDocSnap.data() as AppUser;
-                setCurrentUser(userData);
-                setView('main');
-            } else {
-                const tempUser: AppUser = {
-                    uid: firebaseUser.uid,
-                    name: firebaseUser.displayName || 'New User',
-                    emoji: '👋',
-                    email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL,
-                };
-                setCurrentUser(tempUser);
-                setView('main');
-                setProfileSetupOpen(true);
-            }
-        } else {
-            setCurrentUser(null);
-            setView('auth');
-            setContacts([]);
-            setMessages({});
-            setUpdates([]);
-            setActiveChat(null);
-            setActiveCall(null);
-        }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      unsubscribeRefs.current.forEach(unsub => unsub());
-    };
-  }, []);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     const userDocRef = doc(db, 'users', uid);
@@ -254,8 +212,47 @@ export default function AppShell() {
   }, [toast, handleEndCall, activeCall?.callId, callToAnswer?.id, incomingCall?.id]);
 
   useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        if (firebaseUser) {
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as AppUser;
+                setCurrentUser(userData);
+            } else {
+                const tempUser: AppUser = {
+                    uid: firebaseUser.uid,
+                    name: firebaseUser.displayName || 'New User',
+                    emoji: '👋',
+                    email: firebaseUser.email,
+                    photoURL: firebaseUser.photoURL,
+                };
+                setCurrentUser(tempUser);
+                setProfileSetupOpen(true);
+            }
+            setView('main');
+        } else {
+            setCurrentUser(null);
+            setView('auth');
+            setContacts([]);
+            setMessages({});
+            setUpdates([]);
+            setActiveChat(null);
+            setActiveCall(null);
+            unsubscribeRefs.current.forEach(unsub => unsub());
+            unsubscribeRefs.current = [];
+        }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
     if (currentUser?.uid) {
-        setupFirestoreListeners(currentUser.uid);
+      unsubscribeRefs.current.forEach(unsub => unsub());
+      unsubscribeRefs.current = [];
+      setupFirestoreListeners(currentUser.uid);
     }
     return () => {
       unsubscribeRefs.current.forEach(unsub => unsub());
@@ -313,72 +310,82 @@ export default function AppShell() {
 
   const handleStartChat = useCallback(async (contact: Contact) => {
     if (!currentUser) return;
-
+  
     if (currentUser.blocked && currentUser.blocked[contact.id]) {
-        toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked ${contact.name}. Unblock them to chat.` });
-        return;
+      toast({ variant: 'destructive', title: 'User Blocked', description: `You have blocked ${contact.name}. Unblock them to chat.` });
+      return;
     }
-
+  
     const contactDocRef = doc(db, 'users', contact.id);
     const contactDoc = await getDoc(contactDocRef);
     if (contactDoc.exists()) {
-        const contactData = contactDoc.data() as AppUser;
-        if (contactData.blocked && contactData.blocked[currentUser.uid]) {
-            toast({ variant: 'destructive', title: 'Blocked', description: `You cannot message this user.` });
-            return;
-        }
+      const contactData = contactDoc.data() as AppUser;
+      if (contactData.blocked && contactData.blocked[currentUser.uid]) {
+        toast({ variant: 'destructive', title: 'Blocked', description: `You cannot message this user.` });
+        return;
+      }
     }
-
+  
     setActiveChat(contact);
     setView('chat');
-
-    if (contact.unread > 0) {
-        const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
-        await updateDoc(contactRef, { unread: 0 });
+  
+    // Mark messages as seen
+    const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
+    if ((await getDoc(contactRef)).data()?.unread > 0) {
+      await updateDoc(contactRef, { unread: 0 });
     }
-
+  
     const chatId = [currentUser.uid, contact.id].sort().join('_');
     const allMessages = messages[contact.id] || [];
     const batch = writeBatch(db);
     let hasUpdates = false;
-
+  
     allMessages.forEach(msg => {
-        if (msg.sender === contact.id && msg.status !== 'seen') {
-            const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
-            batch.update(msgRef, { status: 'seen' });
-            hasUpdates = true;
-        }
+      if (msg.sender === contact.id && msg.status !== 'seen') {
+        const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+        batch.update(msgRef, { status: 'seen' });
+        hasUpdates = true;
+      }
     });
-
+  
     if (hasUpdates) {
-        try {
-            await batch.commit();
-        } catch (error) {
-            console.error("Error marking messages as seen:", error);
-        }
+      try {
+        await batch.commit();
+      } catch (error) {
+        console.error("Error marking messages as seen:", error);
+      }
     }
   }, [currentUser, messages, toast]);
 
-  const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
+  const handleSendMessage = useCallback(async (contactId: string, content: string | File, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
     
     const chatId = [currentUser.uid, contactId].sort().join('_');
     
-    let lastMessageText = messageText;
-    let finalMessageText = messageText;
+    let lastMessageText = '';
+    let finalContentUrl = '';
 
     try {
       if (type === 'image' || type === 'audio') {
-          const fileExtension = type === 'image' ? 'jpg' : 'webm';
-          const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
-          const uploadResult = await uploadString(storageRef, messageText, 'data_url');
-          finalMessageText = await getDownloadURL(uploadResult.ref);
+          if (typeof content === 'string') { // It's a data URL
+              const fileExtension = type === 'image' ? 'jpg' : 'webm';
+              const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
+              await uploadString(storageRef, content, 'data_url');
+              finalContentUrl = await getDownloadURL(storageRef);
+          } else { // It's a File object
+              const storageRef = ref(storage, `chats/${chatId}/${content.name}`);
+              await uploadBytes(storageRef, content);
+              finalContentUrl = await getDownloadURL(storageRef);
+          }
           lastMessageText = type === 'image' ? '📷 Photo' : '🎤 Voice message';
+      } else { // It's a text message
+          finalContentUrl = content as string;
+          lastMessageText = finalContentUrl;
       }
 
       const message: Omit<Message, 'id'> = {
         sender: currentUser.uid,
-        text: finalMessageText,
+        text: finalContentUrl,
         timestamp: serverTimestamp(),
         type: type,
         status: 'sent',
@@ -604,7 +611,7 @@ export default function AppShell() {
       console.error("Error deleting chat:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not delete chat.' });
     }
-  }, [currentUser, toast, activeChat]);
+  }, [currentUser, toast, activeChat, setView, setActiveChat]);
 
   const handleToggleChatSelection = useCallback((contactId: string) => {
     setSelectedChats(prev => 
@@ -655,7 +662,7 @@ export default function AppShell() {
 
   const handleSendImage = useCallback((caption: string) => {
     if (activeChat && imageToSend) {
-      handleSendMessage(activeChat.id, imageToSend.dataUrl, 'image', { caption });
+      handleSendMessage(activeChat.id, imageToSend.file, 'image', { caption });
     }
     setImagePreviewOpen(false);
     setImageToSend(null);
@@ -671,7 +678,7 @@ export default function AppShell() {
   if (view === 'auth') {
       return (
         <div id="app-container" className="w-full max-w-[450px] h-[95vh] max-h-[950px] bg-background shadow-wa rounded-lg overflow-hidden flex flex-col relative transition-all duration-300">
-            <AuthView onLogin={() => {}} onSignup={() => {}} onGoogleSignIn={() => {}} />
+            <AuthView />
         </div>
       );
   }
@@ -804,5 +811,3 @@ export default function AppShell() {
     </div>
   );
 }
-
-    

@@ -30,7 +30,7 @@ interface ChatViewProps {
   messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
-  onSendMessage: (contactId: string, message: string, type?: Message['type'], options?: { duration?: number, caption?: string }) => void;
+  onSendMessage: (contactId: string, content: string | File, type?: Message['type'], options?: { duration?: number, caption?: string }) => void;
   onOpenProfile: () => void;
   onClearChat: (contactId: string) => void;
   onBlockContact: (contactId: string, isBlocked: boolean) => void;
@@ -148,7 +148,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
             )}>
                 {type === 'image' ? (
                     <div className="relative">
-                        <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
+                        <Image src={text} alt={caption || "Sent photo"} width={250} height={250} className="rounded-md object-cover" />
                         {caption && <p className="text-sm px-2 py-1 bg-black/50 text-white rounded-b-md absolute bottom-0 left-0 right-0">{caption}</p>}
                         <div className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1.5 py-0.5 rounded flex items-center gap-1">
                            <span>{formatMessageTimestamp(timestamp)}</span>
@@ -295,14 +295,16 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file) {
+      if (file.type.startsWith('image/')) {
         onFileSelected(file);
-    } else if (file) {
-      toast({
-        title: 'File type not supported',
-        description: `Sending files other than images is not yet implemented.`,
-        variant: 'destructive',
-      });
+      } else {
+        toast({
+          title: 'File type not supported',
+          description: `Sending files other than images is not yet implemented.`,
+          variant: 'destructive',
+        });
+      }
     }
     if(e.target) e.target.value = '';
   };
@@ -312,8 +314,20 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     setIsRecording(false);
   };
   
-  const handleSendPhoto = (photoDataUrl: string) => {
-      onSendMessage(contact.id, photoDataUrl, 'image', { caption: '' });
+  const handleSendPhoto = async (photoDataUrl: string) => {
+    try {
+      const response = await fetch(photoDataUrl);
+      const blob = await response.blob();
+      const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      onFileSelected(file);
+    } catch (error) {
+      console.error("Error converting data URL to file:", error);
+      toast({
+        variant: "destructive",
+        title: "Error sending photo",
+        description: "Could not process the captured image."
+      })
+    }
   }
 
 
@@ -393,7 +407,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                     <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick} disabled={isContactBlocked}>
                         <Paperclip className="h-5 w-5" />
                     </Button>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/jpeg,image/png,image/gif" />
                      <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => setIsCameraOpen(true)} disabled={isContactBlocked}>
                         <Camera className="h-5 w-5" />
                     </Button>
