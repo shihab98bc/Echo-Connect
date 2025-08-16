@@ -178,13 +178,36 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
 };
 
 
+// Custom hook for reliable intervals
+function useInterval(callback: () => void, delay: number | null) {
+  const savedCallback = useRef<() => void>();
+
+  useEffect(() => {
+    savedCallback.current = callback;
+  }, [callback]);
+
+  useEffect(() => {
+    function tick() {
+      if (savedCallback.current) {
+        savedCallback.current();
+      }
+    }
+    if (delay !== null) {
+      let id = setInterval(tick, delay);
+      return () => clearInterval(id);
+    }
+  }, [delay]);
+}
+
 const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duration: number) => void, onCancel: () => void }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [duration, setDuration] = useState(0);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
     const chunksRef = useRef<Blob[]>([]);
-    const isCancelledRef = useRef(false);
+
+    useInterval(() => {
+        setDuration(prevDuration => prevDuration + 1);
+    }, isRecording ? 1000 : null);
 
     const startRecording = useCallback(async () => {
         try {
@@ -198,9 +221,8 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
 
             recorder.onstop = () => {
                 stream.getTracks().forEach(track => track.stop());
-                if (isCancelledRef.current) {
-                    isCancelledRef.current = false;
-                    chunksRef.current = [];
+                if (chunksRef.current.length === 0) {
+                     // This happens if stop is called immediately or after a cancellation.
                     return;
                 }
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
@@ -215,35 +237,48 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
             };
 
             recorder.start();
+            setDuration(0);
             setIsRecording(true);
-            timerRef.current = setInterval(() => {
-                setDuration(prevDuration => prevDuration + 1);
-            }, 1000);
         } catch (error) {
             console.error("Error starting recording:", error);
             alert("Could not start recording. Please grant microphone permission.");
             onCancel();
         }
     }, [onCancel, onSend, duration]);
-
+    
     const stopRecording = (cancelled = false) => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            isCancelledRef.current = cancelled;
+            mediaRecorderRef.current.onstop = () => {
+                 mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+                 if (cancelled) {
+                     chunksRef.current = [];
+                     onCancel();
+                     return;
+                 }
+                if (chunksRef.current.length === 0) return;
+                const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+                const finalDuration = duration;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const dataUrl = e.target?.result as string;
+                    onSend(dataUrl, finalDuration);
+                };
+                reader.readAsDataURL(blob);
+                chunksRef.current = [];
+            };
             mediaRecorderRef.current.stop();
         }
         setIsRecording(false);
-        if(timerRef.current) clearInterval(timerRef.current);
         if (cancelled) {
             onCancel();
         }
     };
 
+
     useEffect(() => {
         startRecording();
         return () => {
-            if(timerRef.current) clearInterval(timerRef.current);
             if(mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                isCancelledRef.current = true;
                 mediaRecorderRef.current.stop();
             }
         };
