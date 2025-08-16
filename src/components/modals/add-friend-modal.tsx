@@ -29,7 +29,7 @@ export default function AddFriendModal({ isOpen, onClose, onAddFriend }: AddFrie
         <DialogHeader>
           <DialogTitle className="font-headline text-2xl">Add a Friend</DialogTitle>
           <DialogDescription>
-            Enter your friend's unique EchoConnect ID to send them a request.
+            Enter your friend's EchoConnect ID (their email) to send a request. You can find your own ID in your profile.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -39,7 +39,7 @@ export default function AddFriendModal({ isOpen, onClose, onAddFriend }: AddFrie
                 id="friend-id" 
                 value={friendId}
                 onChange={(e) => setFriendId(e.target.value)}
-                placeholder="@friend1234" 
+                placeholder="friend@example.com" 
             />
           </div>
         </div>

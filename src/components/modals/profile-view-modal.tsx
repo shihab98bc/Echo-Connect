@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { summarizeUserActivity } from '@/app/actions';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheckIcon } from 'lucide-react';
+import { Copy, Loader2, ShieldCheckIcon } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 
@@ -48,6 +48,16 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOp
     }
     setIsLoading(false);
   };
+  
+  const handleCopyId = () => {
+    if (user.id) {
+        navigator.clipboard.writeText(user.id);
+        toast({
+            title: "ID Copied!",
+            description: "Your EchoConnect ID has been copied to the clipboard.",
+        });
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -60,7 +70,12 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOp
             </Avatar>
             <div>
               <DialogTitle className="font-headline text-3xl">{user.name}</DialogTitle>
-              <DialogDescription className="text-base">{user.id}</DialogDescription>
+              <DialogDescription className="text-base flex items-center gap-2">
+                <span>{user.id}</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyId}>
+                    <Copy className="h-4 w-4" />
+                </Button>
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
