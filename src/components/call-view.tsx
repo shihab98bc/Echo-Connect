@@ -128,6 +128,21 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   const callDocRef = useRef<DocumentReference | null>(doc(db, 'calls', callId));
 
   useEffect(() => {
+    const handleEndCall = async (isError = false) => {
+        pc?.close();
+        pc = null;
+        localStreamInstance?.getTracks().forEach(track => track.stop());
+        localStreamInstance = null;
+        setLocalStream(null);
+        setRemoteStream(null);
+        
+        if (callDocRef.current && !isError) {
+             const docSnap = await getDoc(callDocRef.current);
+             if (docSnap.exists()) await deleteDoc(callDocRef.current);
+        }
+        onEndCall();
+    };
+      
     const setupAndStartCall = async () => {
         pc = new RTCPeerConnection(servers);
 
@@ -212,21 +227,6 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     
     const unsubPromise = setupAndStartCall();
 
-    const handleEndCall = async (isError = false) => {
-        pc?.close();
-        pc = null;
-        localStreamInstance?.getTracks().forEach(track => track.stop());
-        localStreamInstance = null;
-        setLocalStream(null);
-        setRemoteStream(null);
-        
-        if (callDocRef.current && !isError) {
-             const docSnap = await getDoc(callDocRef.current);
-             if (docSnap.exists()) await deleteDoc(callDocRef.current);
-        }
-        onEndCall();
-    };
-
     return () => {
         unsubPromise.then(unsub => {
             if (unsub) unsub();
@@ -305,6 +305,21 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
   const toggleSpeaker = () => {
     setIsSpeakerOn(s => !s);
     toast({ title: isSpeakerOn ? 'Speaker Off' : 'Speaker On'});
+  };
+
+  const handleEndCall = async (isError = false) => {
+    pc?.close();
+    pc = null;
+    localStreamInstance?.getTracks().forEach(track => track.stop());
+    localStreamInstance = null;
+    setLocalStream(null);
+    setRemoteStream(null);
+    
+    if (callDocRef.current && !isError) {
+         const docSnap = await getDoc(callDocRef.current);
+         if (docSnap.exists()) await deleteDoc(callDocRef.current);
+    }
+    onEndCall();
   };
 
   return (
@@ -396,7 +411,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                         <SpeakerIcon className="h-7 w-7" />
                     </Button>
                 </div>
-                <Button onClick={() => onEndCall()} className="bg-destructive hover:bg-destructive/80 text-destructive-foreground rounded-full w-20 h-20 shadow-lg">
+                <Button onClick={() => handleEndCall()} className="bg-destructive hover:bg-destructive/80 text-destructive-foreground rounded-full w-20 h-20 shadow-lg">
                     <EndCallIcon className="h-10 w-10" />
                 </Button>
             </motion.div>
