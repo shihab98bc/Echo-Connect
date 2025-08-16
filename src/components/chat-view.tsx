@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AppUser, Contact } from './app-shell';
+import { AppUser, Contact, Message } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -11,9 +11,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 interface ChatViewProps {
   user: AppUser;
   contact: Contact;
-  messages: { sender: string; text: string; timestamp: string }[];
+  messages: Message[];
   onBack: () => void;
   onStartCall: (contact: Contact, type: 'video' | 'voice') => void;
+  onSendMessage: (contactId: string, message: Message) => void;
 }
 
 const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: string; isSent: boolean }) => (
@@ -25,13 +26,18 @@ const MessageBubble = ({ text, timestamp, isSent }: { text: string; timestamp: s
     </div>
 );
 
-export default function ChatView({ user, contact, messages, onBack, onStartCall }: ChatViewProps) {
+export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim()) {
-      console.log('Sending message:', newMessage);
+      const message: Message = {
+        sender: user.uid,
+        text: newMessage.trim(),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      onSendMessage(contact.id, message);
       setNewMessage('');
     }
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import AuthView from '@/components/auth-view';
 import MainView from '@/components/main-view';
 import ChatView from '@/components/chat-view';
@@ -9,7 +9,7 @@ import ProfileSetupModal from '@/components/modals/profile-setup-modal';
 import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
-import { mockUser, mockContacts as initialContacts, mockMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
+import { mockUser, mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 
@@ -18,6 +18,7 @@ export type AppUser = typeof mockUser;
 export type Contact = (typeof initialContacts)[0];
 export type Call = (typeof mockCalls)[0];
 export type Update = (typeof initialUpdates)[0];
+export type Message = { sender: string; text: string; timestamp: string };
 
 
 export default function AppShell() {
@@ -38,6 +39,7 @@ export default function AppShell() {
   // State for data
   const [contacts, setContacts] = useState(initialContacts);
   const [updates, setUpdates] = useState(initialUpdates);
+  const [messages, setMessages] = useState(initialMessages);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -75,6 +77,25 @@ export default function AppShell() {
     setActiveCall({ contact, type });
     setView('call');
   };
+
+  const handleSendMessage = (contactId: string, message: Message) => {
+    setMessages(prev => {
+        const newMessages = { ...prev };
+        if (!newMessages[contactId]) {
+            newMessages[contactId] = [];
+        }
+        newMessages[contactId] = [...newMessages[contactId], message];
+        return newMessages;
+    });
+
+    // Also update the last message for the contact in the contact list
+    setContacts(prev => prev.map(c => 
+        c.id === contactId 
+        ? { ...c, lastMessage: message.text, timestamp: message.timestamp }
+        : c
+    ));
+  };
+
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
@@ -145,9 +166,10 @@ export default function AppShell() {
           <ChatView
             user={mockUser}
             contact={activeChat}
-            messages={mockMessages[activeChat.id] || []}
+            messages={messages[activeChat.id] || []}
             onBack={() => setView('main')}
             onStartCall={handleStartCall}
+            onSendMessage={handleSendMessage}
           />
         );
       case 'call':
