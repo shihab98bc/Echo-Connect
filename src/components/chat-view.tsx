@@ -142,6 +142,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const chunksRef = useRef<Blob[]>([]);
+    const isCancelledRef = useRef(false);
 
     const startRecording = useCallback(async () => {
         try {
@@ -154,10 +155,14 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
             };
 
             recorder.onstop = () => {
+                stream.getTracks().forEach(track => track.stop());
+                if (isCancelledRef.current) {
+                    isCancelledRef.current = false;
+                    return;
+                }
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
                 onSend(blob, durationRef.current);
                 chunksRef.current = [];
-                stream.getTracks().forEach(track => track.stop());
             };
 
             recorder.start();
@@ -176,11 +181,15 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
         }
     }, [onCancel, onSend]);
 
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
+    const stopRecording = (cancelled = false) => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            isCancelledRef.current = cancelled;
             mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            if(timerRef.current) clearInterval(timerRef.current);
+        }
+        setIsRecording(false);
+        if(timerRef.current) clearInterval(timerRef.current);
+        if (cancelled) {
+            onCancel();
         }
     };
 
@@ -189,6 +198,7 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
         return () => {
             if(timerRef.current) clearInterval(timerRef.current);
             if(mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                isCancelledRef.current = true;
                 mediaRecorderRef.current.stop();
             }
         };
@@ -202,14 +212,14 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (blob: Blob, duration: nu
 
     return (
         <div className="flex-grow flex items-center justify-between px-4">
-            <Button variant="ghost" size="icon" className="text-destructive" onClick={onCancel}>
+            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => stopRecording(true)}>
                 <Trash2 className="w-5 h-5" />
             </Button>
             <div className="flex items-center gap-2 text-muted-foreground">
                 <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
                 <span>{formatTime(duration)}</span>
             </div>
-            <Button size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={stopRecording}>
+            <Button size="icon" className="rounded-full bg-button-color hover:bg-button-color/90 w-12 h-12" onClick={() => stopRecording(false)}>
                 <SendIcon className="h-6 w-6 text-white" />
             </Button>
         </div>
