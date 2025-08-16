@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { CameraIcon, Check, Flashlight, FlashlightOff, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
+import { Flashlight, FlashlightOff, Loader2, Send, SwitchCameraIcon, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
@@ -36,7 +36,6 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     setPhotoDataUrl(null);
     setHasFlash(false);
     setIsFlashOn(false);
-    setHasPermission(null);
   }, [stream]);
   
   const handleClose = useCallback(() => {
@@ -45,54 +44,53 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   }, [cleanupCamera, onClose]);
 
 
-  const getCameraStream = useCallback(async (front: boolean) => {
-    try {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: front ? 'user' : 'environment' },
-      });
-      setStream(newStream);
-      setHasPermission(true);
-
-      const videoTrack = newStream.getVideoTracks()[0];
-      const capabilities = videoTrack.getCapabilities();
-      // @ts-ignore
-      setHasFlash(!!capabilities.torch);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream;
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setHasPermission(false);
-      setHasFlash(false);
-      toast({
-        variant: 'destructive',
-        title: 'Camera Access Denied',
-        description: 'Please enable camera permissions in your browser settings.',
-      });
-      handleClose();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, toast, handleClose]);
-
   useEffect(() => {
+    const getCameraStream = async (front: boolean) => {
+      try {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: front ? 'user' : 'environment' },
+        });
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+        }
+
+        const videoTrack = newStream.getVideoTracks()[0];
+        // @ts-ignore - 'torch' is a valid capability but not in all TS libs
+        const capabilities = videoTrack.getCapabilities();
+        // @ts-ignore
+        setHasFlash(!!capabilities.torch);
+        setStream(newStream);
+        setHasPermission(true);
+      
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        setHasPermission(false);
+        setHasFlash(false);
+        toast({
+          variant: 'destructive',
+          title: 'Camera Access Denied',
+          description: 'Please enable camera permissions in your browser settings.',
+        });
+        handleClose();
+      }
+    };
+    
     if (isOpen) {
       setPhotoDataUrl(null);
       getCameraStream(isFrontCamera);
     }
     
     return () => {
-        if(isOpen) {
-            cleanupCamera();
-        }
+      if (isOpen) {
+        cleanupCamera();
+      }
     }
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isFrontCamera]);
+  }, [isOpen, isFrontCamera, toast, handleClose, stream, cleanupCamera]);
   
   useEffect(() => {
     const applyFlash = async () => {
@@ -105,6 +103,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                 });
             } catch (error) {
                 console.error('Error toggling flash:', error);
+                setHasFlash(false); // Assume flash is not supported if it errors
             }
         }
     };
@@ -113,13 +112,12 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
 
 
   const handleSwitchCamera = () => {
-    const newIsFront = !isFrontCamera;
-    setIsFrontCamera(newIsFront);
+    setIsFrontCamera(prev => !prev);
     setIsFlashOn(false);
   };
   
   const handleToggleFlash = async () => {
-    if (!stream || !hasFlash || isFrontCamera) return;
+    if (!hasFlash || isFrontCamera) return;
     setIsFlashOn(prev => !prev);
   };
 
@@ -162,16 +160,15 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
-          <DialogHeader className="p-4 absolute top-0 left-0 z-10 w-full">
-             <DialogTitle className="sr-only">Take a photo</DialogTitle>
-             <div className="flex justify-between items-center">
-                <Button variant="ghost" size="icon" onClick={handleClose} className="bg-black/50 hover:bg-black/70 rounded-full">
-                    <X className="w-6 h-6" />
-                </Button>
-             </div>
-          </DialogHeader>
+          <div className="p-4 absolute top-0 left-0 z-10 w-full flex justify-between items-center">
+             <Button variant="ghost" size="icon" onClick={handleClose} className="bg-black/50 hover:bg-black/70 rounded-full">
+                 <X className="w-6 h-6" />
+             </Button>
+             <h2 id="camera-title" className="sr-only">Camera</h2>
+          </div>
+
           <div className="relative flex-grow flex items-center justify-center overflow-hidden">
             <AnimatePresence>
               {hasPermission === null && (
