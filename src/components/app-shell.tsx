@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import AuthView from '@/components/auth-view';
 import MainView from '@/components/main-view';
 import ChatView from '@/components/chat-view';
@@ -98,49 +98,7 @@ export default function AppShell() {
   // Firestore listeners unsubscribe functions
   const unsubscribeRefs = useRef<(() => void)[]>([]);
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-        // Cleanup listeners on any auth change
-        unsubscribeRefs.current.forEach(unsub => unsub());
-        unsubscribeRefs.current = [];
-
-        if (firebaseUser) {
-            const userDocRef = doc(db, 'users', firebaseUser.uid);
-            const userDocSnap = await getDoc(userDocRef);
-
-            if (userDocSnap.exists()) {
-                const userData = userDocSnap.data() as AppUser;
-                setCurrentUser(userData);
-                setView('main');
-                setupFirestoreListeners(userData.uid);
-            } else {
-                const tempUser: AppUser = {
-                    uid: firebaseUser.uid,
-                    name: firebaseUser.displayName || 'New User',
-                    emoji: '👋',
-                    email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL,
-                };
-                setCurrentUser(tempUser);
-                setView('main');
-                setProfileSetupOpen(true);
-            }
-        } else {
-            setCurrentUser(null);
-            setView('auth');
-            setContacts([]);
-            setMessages({});
-            setUpdates([]);
-        }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      unsubscribeRefs.current.forEach(unsub => unsub());
-    };
-  }, []);
-
-  const setupFirestoreListeners = (uid: string) => {
+  const setupFirestoreListeners = useCallback((uid: string) => {
     // Clean up previous listeners just in case
     unsubscribeRefs.current.forEach(unsub => unsub());
     unsubscribeRefs.current = [];
@@ -240,10 +198,51 @@ export default function AppShell() {
         }
     });
     unsubscribeRefs.current.push(unsubCalls);
-  };
+  }, []);
 
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        // Cleanup listeners on any auth change
+        unsubscribeRefs.current.forEach(unsub => unsub());
+        unsubscribeRefs.current = [];
 
-  const handleProfileSave = async (name: string, emoji: string) => {
+        if (firebaseUser) {
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data() as AppUser;
+                setCurrentUser(userData);
+                setView('main');
+                setupFirestoreListeners(userData.uid);
+            } else {
+                const tempUser: AppUser = {
+                    uid: firebaseUser.uid,
+                    name: firebaseUser.displayName || 'New User',
+                    emoji: '👋',
+                    email: firebaseUser.email,
+                    photoURL: firebaseUser.photoURL,
+                };
+                setCurrentUser(tempUser);
+                setView('main');
+                setProfileSetupOpen(true);
+            }
+        } else {
+            setCurrentUser(null);
+            setView('auth');
+            setContacts([]);
+            setMessages({});
+            setUpdates([]);
+        }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeRefs.current.forEach(unsub => unsub());
+    };
+  }, [setupFirestoreListeners]);
+
+  const handleProfileSave = useCallback(async (name: string, emoji: string) => {
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) return;
     
@@ -290,9 +289,9 @@ export default function AppShell() {
         console.error("Error saving profile:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not save your profile.' });
     }
-  };
+  }, [setupFirestoreListeners, toast]);
 
-  const handleStartChat = async (contact: Contact) => {
+  const handleStartChat = useCallback(async (contact: Contact) => {
     if (!currentUser) return;
 
     if (currentUser.blocked && currentUser.blocked[contact.id]) {
@@ -319,13 +318,10 @@ export default function AppShell() {
     const chatId = [currentUser.uid, contact.id].sort().join('_');
     const messagesRef = collection(db, 'chats', chatId, 'messages');
     
-    // This is the updated part. Instead of a complex query,
-    // we get all messages and filter on the client.
     const messagesSnapshot = await getDocs(messagesRef);
     const batch = writeBatch(db);
     messagesSnapshot.forEach(docSnap => {
         const msg = docSnap.data() as Message;
-        // Check if the message is from the other user and not yet seen
         if (msg.sender === contact.id && msg.status !== 'seen') {
             batch.update(docSnap.ref, { status: 'seen' });
         }
@@ -334,9 +330,9 @@ export default function AppShell() {
 
     setActiveChat(contact);
     setView('chat');
-  };
+  }, [currentUser, toast]);
 
-  const handleSendMessage = async (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
+  const handleSendMessage = useCallback(async (contactId: string, messageText: string, type: Message['type'] = 'text', duration?: number) => {
     if (!currentUser) return;
     
     const chatId = [currentUser.uid, contactId].sort().join('_');
@@ -383,9 +379,9 @@ export default function AppShell() {
         console.error("Error sending message:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
     }
-  };
+  }, [currentUser, toast]);
 
-  const handleAddFriend = async (friendEmail: string) => {
+  const handleAddFriend = useCallback(async (friendEmail: string) => {
     if (!currentUser || friendEmail === currentUser.email) {
       toast({ variant: 'destructive', title: 'Error', description: "You cannot add yourself." });
       return;
@@ -436,9 +432,9 @@ export default function AppShell() {
         console.error("Error adding friend:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not send friend request.' });
     }
-  };
+  }, [currentUser, toast]);
 
-  const handleAcceptRequest = async (request: Update) => {
+  const handleAcceptRequest = useCallback(async (request: Update) => {
     if (!currentUser) return;
     
     const batch = writeBatch(db);
@@ -479,9 +475,9 @@ export default function AppShell() {
         console.error("Error accepting request:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not accept friend request.' });
     }
-  };
+  }, [currentUser, toast]);
   
-  const handleRejectRequest = async (request: Update) => {
+  const handleRejectRequest = useCallback(async (request: Update) => {
     if (!currentUser) return;
     try {
         const requestRef = doc(db, 'users', currentUser.uid, 'friendRequests', request.from.id);
@@ -494,9 +490,9 @@ export default function AppShell() {
          console.error("Error rejecting request:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not reject friend request.' });
     }
-  };
+  }, [currentUser, toast]);
   
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
         await signOut(auth);
         setActiveChat(null);
@@ -509,9 +505,9 @@ export default function AppShell() {
             description: 'An error occurred while signing out.',
         });
     }
-  };
+  }, [toast]);
 
-  const handleStartCall = (contact: Contact, type: 'video' | 'voice') => {
+  const handleStartCall = useCallback((contact: Contact, type: 'video' | 'voice') => {
     if (!currentUser) return;
 
     if (currentUser.blocked && currentUser.blocked[contact.id]) {
@@ -522,15 +518,15 @@ export default function AppShell() {
     const callId = [currentUser.uid, contact.id].sort().join('_');
     setActiveCall({ contact, type, callId });
     setView('call');
-  };
+  }, [currentUser, toast]);
 
-  const handleEndCall = () => {
+  const handleEndCall = useCallback(() => {
     setActiveCall(null);
     setCallToAnswer(null);
     setView(activeChat ? 'chat' : 'main');
-  };
+  }, [activeChat]);
   
-  const handleClearChat = async (contactId: string) => {
+  const handleClearChat = useCallback(async (contactId: string) => {
     if (!currentUser) return;
     const chatId = [currentUser.uid, contactId].sort().join('_');
     const messagesRef = collection(db, 'chats', chatId, 'messages');
@@ -554,9 +550,9 @@ export default function AppShell() {
       console.error("Error clearing chat", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not clear chat.' });
     }
-  };
+  }, [currentUser, toast]);
 
-  const handleBlockContact = async (contactId: string, isBlocked: boolean) => {
+  const handleBlockContact = useCallback(async (contactId: string, isBlocked: boolean) => {
     if (!currentUser) return;
     const userRef = doc(db, 'users', currentUser.uid);
 
@@ -569,9 +565,9 @@ export default function AppShell() {
         console.error("Error blocking contact:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not update block status.' });
     }
-  };
+  }, [currentUser, toast]);
   
-  const handleDeleteChat = async (contactId: string) => {
+  const handleDeleteChat = useCallback(async (contactId: string) => {
     if(!currentUser) return;
     const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
     try {
@@ -591,28 +587,28 @@ export default function AppShell() {
       console.error("Error deleting chat:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not delete chat.' });
     }
-  };
+  }, [currentUser, toast, activeChat]);
 
 
-  const handleToggleChatSelection = (contactId: string) => {
+  const handleToggleChatSelection = useCallback((contactId: string) => {
     setSelectedChats(prev => 
         prev.includes(contactId) 
         ? prev.filter(id => id !== contactId)
         : [...prev, contactId]
     );
-  };
+  }, []);
   
-  const handleEnterSelectionMode = (contactId: string) => {
+  const handleEnterSelectionMode = useCallback((contactId: string) => {
     setIsSelectionMode(true);
     setSelectedChats([contactId]);
-  };
+  }, []);
 
-  const handleExitSelectionMode = () => {
+  const handleExitSelectionMode = useCallback(() => {
     setIsSelectionMode(false);
     setSelectedChats([]);
-  };
+  }, []);
 
-  const handleDeleteSelectedChats = async () => {
+  const handleDeleteSelectedChats = useCallback(async () => {
     if (!currentUser) return;
     const batch = writeBatch(db);
     selectedChats.forEach(contactId => {
@@ -627,14 +623,14 @@ export default function AppShell() {
         toast({ variant: 'destructive', title: 'Error', description: 'Could not delete selected chats.' });
     }
     handleExitSelectionMode();
-  };
+  }, [currentUser, selectedChats, toast, handleExitSelectionMode]);
 
-  const handleSendPhoto = (photoDataUrl: string) => {
+  const handleSendPhoto = useCallback((photoDataUrl: string) => {
     if (activeChat) {
       handleSendMessage(activeChat.id, photoDataUrl, 'image');
     }
     setCameraOpen(false);
-  };
+  }, [activeChat, handleSendMessage]);
 
 
   const viewVariants = {
