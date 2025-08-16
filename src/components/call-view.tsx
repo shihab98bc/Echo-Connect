@@ -259,17 +259,19 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                        <ParticipantVideo participant={contact} isLocal={false} videoStream={null} isVideoEnabled={isVideoEnabled} isAudioOnly={false}/>
                     </div>
 
-                    <motion.div 
-                        className="absolute w-28 h-40 z-10 cursor-move"
-                        drag
-                        dragConstraints={localVideoContainerRef}
-                        dragSnapToOrigin={false}
-                        dragElastic={0.1}
-                        initial={{ top: 'auto', bottom: 120, right: 20, x:0, y:0 }}
-                        dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
-                    >
-                        <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
-                    </motion.div>
+                    {isVideoEnabled && (
+                      <motion.div 
+                          className="absolute w-28 h-40 z-10 cursor-move"
+                          drag
+                          dragConstraints={localVideoContainerRef}
+                          dragSnapToOrigin={false}
+                          dragElastic={0.1}
+                          initial={{ top: 'auto', bottom: 120, right: 20, x:0, y:0 }}
+                          dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+                      >
+                          <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
+                      </motion.div>
+                    )}
 
                     {hasCameraPermission === false && type === 'video' && (
                         <Alert variant="destructive" className="absolute top-24 w-auto z-20">
