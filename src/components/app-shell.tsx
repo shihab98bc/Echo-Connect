@@ -110,7 +110,7 @@ export default function AppShell() {
         }
         return prevView;
     });
-}, [activeChat, setActiveCall, setCallToAnswer, setView]);
+}, [activeChat]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     const userDocRef = doc(db, 'users', uid);
@@ -137,14 +137,26 @@ export default function AppShell() {
           const messagesQuery = query(messagesRef, orderBy('timestamp', 'asc'));
 
           const unsubMessages = onSnapshot(messagesQuery, (msgSnapshot) => {
-            const newMessages = msgSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Message));
-            setMessages(prev => ({ ...prev, [contact.id]: newMessages }));
+            const newMessages = msgSnapshot.docChanges().map(change => ({id: change.doc.id, ...change.doc.data()} as Message));
+            setMessages(prev => {
+                const updatedMessages = [...(prev[contact.id] || [])];
+                newMessages.forEach(newMsg => {
+                    const index = updatedMessages.findIndex(m => m.id === newMsg.id);
+                    if (index > -1) {
+                        updatedMessages[index] = newMsg;
+                    } else {
+                        updatedMessages.push(newMsg);
+                    }
+                });
+                return { ...prev, [contact.id]: updatedMessages.sort((a,b) => (a.timestamp as any) - (b.timestamp as any)) };
+            });
             
             const batch = writeBatch(db);
             let hasUpdates = false;
-            newMessages.forEach(msg => {
+            msgSnapshot.docs.forEach(doc => {
+                const msg = {id: doc.id, ...doc.data()} as Message;
                 if (msg.sender !== uid && msg.status !== 'delivered' && msg.status !== 'seen') {
-                    const msgRef = doc(db, 'chats', chatId, 'messages', msg.id);
+                    const msgRef = doc.ref;
                     batch.update(msgRef, { status: 'delivered' });
                     hasUpdates = true;
                 }
@@ -363,123 +375,117 @@ export default function AppShell() {
 
   const handleSendMessage = useCallback(async (contactId: string, content: string | File, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
-  
+
     const chatId = [currentUser.uid, contactId].sort().join('_');
     const tempId = `temp_${Date.now()}_${Math.random()}`;
-  
-    // --- Optimistic UI Update ---
+
     let optimisticContent = '';
     if (type === 'image' && content instanceof File) {
-      optimisticContent = URL.createObjectURL(content);
+        optimisticContent = URL.createObjectURL(content);
     } else if (type === 'audio' && typeof content === 'string') {
-      optimisticContent = content; // dataURL for audio
+        optimisticContent = content; // dataURL for audio
     } else {
-      optimisticContent = content as string;
+        optimisticContent = content as string;
     }
-  
+
     const optimisticMessage: Message = {
-      id: tempId,
-      sender: currentUser.uid,
-      text: optimisticContent,
-      timestamp: new Date(),
-      type: type,
-      status: 'sent', // Visually appears as 'sending'
-      duration: options.duration,
-      caption: options.caption,
-    };
-  
-    setMessages(prev => ({
-      ...prev,
-      [contactId]: [...(prev[contactId] || []), optimisticMessage],
-    }));
-  
-    try {
-      // --- Background Task: Upload file and update Firestore ---
-      let finalContentUrl = '';
-      let lastMessageText = '';
-  
-      if ((type === 'image' || type === 'audio') && content) {
-        const fileExtension = type === 'image' ? (content as File).name.split('.').pop() : 'webm';
-        const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
-  
-        if (content instanceof File) {
-          await uploadBytes(storageRef, content);
-        } else {
-          await uploadString(storageRef, content, 'data_url');
-        }
-        finalContentUrl = await getDownloadURL(storageRef);
-        lastMessageText = type === 'image' ? '📷 Photo' : '🎤 Voice message';
-      } else {
-        finalContentUrl = content as string;
-        lastMessageText = finalContentUrl;
-      }
-  
-      const messagePayload: Omit<Message, 'id'> = {
+        id: tempId,
         sender: currentUser.uid,
-        text: finalContentUrl,
-        timestamp: serverTimestamp(),
+        text: optimisticContent,
+        timestamp: new Date(),
         type: type,
         status: 'sent',
-        ...options,
-      };
-  
-      // Ensure both users are in each other's contact list
-      const batch = writeBatch(db);
-      const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
-      const otherUserRef = doc(db, 'users', contactId);
-      const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-  
-      const [userContactSnap, otherUserSnap, otherUserContactSnap] = await Promise.all([
-        getDoc(userContactRef),
-        getDoc(otherUserRef),
-        getDoc(otherUserContactRef),
-      ]);
-      const otherUserData = otherUserSnap.data() as AppUser;
-  
-      if (!userContactSnap.exists()) {
-        batch.set(userContactRef, {
+        duration: options.duration,
+        caption: options.caption,
+    };
+
+    setMessages(prev => ({
+        ...prev,
+        [contactId]: [...(prev[contactId] || []), optimisticMessage],
+    }));
+
+    try {
+        let finalContentUrl = '';
+        let lastMessageText = '';
+
+        if ((type === 'image' || type === 'audio') && content) {
+            const fileExtension = type === 'image' ? (content as File).name.split('.').pop() : 'webm';
+            const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
+
+            if (content instanceof File) {
+                await uploadBytes(storageRef, content);
+            } else {
+                await uploadString(storageRef, content, 'data_url');
+            }
+            finalContentUrl = await getDownloadURL(storageRef);
+            lastMessageText = type === 'image' ? `📷 ${options.caption || 'Photo'}` : '🎤 Voice message';
+        } else {
+            finalContentUrl = content as string;
+            lastMessageText = finalContentUrl;
+        }
+
+        const messagePayload: Omit<Message, 'id' | 'status'> = {
+            sender: currentUser.uid,
+            text: finalContentUrl,
+            timestamp: serverTimestamp(),
+            type: type,
+            caption: options.caption,
+            duration: options.duration,
+        };
+
+        const batch = writeBatch(db);
+        const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
+        batch.set(newMessageRef, messagePayload);
+
+        const userContactRef = doc(db, 'users', currentUser.uid, 'contacts', contactId);
+        const otherUserRef = doc(db, 'users', contactId);
+        const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
+
+        const [userContactSnap, otherUserSnap, otherUserContactSnap] = await Promise.all([
+            getDoc(userContactRef),
+            getDoc(otherUserRef),
+            getDoc(otherUserContactRef),
+        ]);
+        const otherUserData = otherUserSnap.data() as AppUser;
+
+        const userContactData = {
             id: contactId,
             name: otherUserData.name,
             emoji: otherUserData.emoji,
             photoURL: otherUserData.photoURL,
             lastMessage: lastMessageText,
             timestamp: serverTimestamp(),
-            unread: 0,
             isMuted: false,
-        });
-      }
-       if (!otherUserContactSnap.exists()) {
-        batch.set(otherUserContactRef, {
+        };
+        batch.set(userContactRef, { ...userContactData, unread: 0 }, { merge: true });
+
+        const otherUserContactData = {
             id: currentUser.uid,
             name: currentUser.name,
             emoji: currentUser.emoji,
             photoURL: currentUser.photoURL,
             lastMessage: lastMessageText,
             timestamp: serverTimestamp(),
-            unread: 1,
             isMuted: false,
+        };
+        batch.set(otherUserContactRef, { ...otherUserContactData, unread: increment(1) }, { merge: true });
+
+        await batch.commit();
+
+        setMessages(prev => {
+            const updatedContactMessages = prev[contactId].map(msg => 
+                msg.id === tempId ? { ...msg, id: newMessageRef.id, status: 'sent' } : msg
+            );
+            return { ...prev, [contactId]: updatedContactMessages };
         });
-      }
-  
-      await batch.commit();
 
-      // Add message and update contacts
-      const finalBatch = writeBatch(db);
-      finalBatch.set(doc(collection(db, 'chats', chatId, 'messages')), messagePayload);
-
-      finalBatch.update(userContactRef, { lastMessage: lastMessageText, timestamp: serverTimestamp() });
-      finalBatch.update(otherUserContactRef, { lastMessage: lastMessageText, timestamp: serverTimestamp(), unread: increment(1) });
-      
-      await finalBatch.commit();
-  
     } catch (error) {
-      console.error("Error sending message:", error);
-      toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
-      // Revert optimistic update on failure
-      setMessages(prev => ({
-        ...prev,
-        [contactId]: prev[contactId].filter(m => m.id !== tempId),
-      }));
+        console.error("Error sending message:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
+        setMessages(prev => ({
+            ...prev,
+            [contactId]: prev[contactId].filter(m => m.id !== tempId),
+        }));
     }
   }, [currentUser, toast]);
 
@@ -617,7 +623,7 @@ export default function AppShell() {
     const callId = [currentUser.uid, contact.id].sort().join('_');
     setActiveCall({ contact, type, callId });
     setView('call');
-  }, [currentUser, toast, setView, setActiveCall]);
+  }, [currentUser, toast]);
   
   const handleClearChat = useCallback(async (contactId: string) => {
     if (!currentUser) return;
