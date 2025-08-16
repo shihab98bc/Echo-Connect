@@ -93,6 +93,7 @@ export default function AppShell() {
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedChats, setSelectedChats] = useState<string[]>([]);
+  const [updatesViewed, setUpdatesViewed] = useState(false);
   
   // Firestore listeners unsubscribe functions
   const unsubscribeRefs = useRef<(() => void)[]>([]);
@@ -552,8 +553,6 @@ export default function AppShell() {
       )
   }
   
-  const [updatesViewed, setUpdatesViewed] = useState(false);
-
   const renderView = () => {
     switch (view) {
       case 'main':
