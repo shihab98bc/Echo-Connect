@@ -43,7 +43,7 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text' }: { text: strin
         )}>
             {type === 'image' ? (
                 <div className="relative">
-                    <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md" />
+                    <Image src={text} alt="Sent photo" width={250} height={250} className="rounded-md object-cover" />
                     <p className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 py-0.5 rounded">{timestamp}</p>
                 </div>
             ) : (
@@ -84,11 +84,22 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onSendMessage(contact.id, `📄 File: ${file.name}`);
-      toast({
-        title: 'File Sent',
-        description: `${file.name} has been sent.`,
-      });
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (loadEvent) => {
+          const dataUrl = loadEvent.target?.result as string;
+          if (dataUrl) {
+            onSendMessage(contact.id, dataUrl, 'image');
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        onSendMessage(contact.id, `📄 File: ${file.name}`);
+        toast({
+          title: 'File Sent',
+          description: `${file.name} has been sent.`,
+        });
+      }
     }
     // Reset file input
     if(e.target) {
@@ -167,7 +178,7 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
                 <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick}>
                     <Paperclip className="h-5 w-5" />
                 </Button>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
                 <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={onOpenCamera}>
                     <CameraIcon className="h-5 w-5" />
                 </Button>
