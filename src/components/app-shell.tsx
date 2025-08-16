@@ -37,13 +37,14 @@ export default function AppShell() {
   const [activeCall, setActiveCall] = useState<{ contact: Contact; type: 'video' | 'voice' } | null>(null);
 
   // State for data
+  const [user, setUser] = useState(mockUser);
   const [contacts, setContacts] = useState(initialContacts);
   const [updates, setUpdates] = useState(initialUpdates);
   const [messages, setMessages] = useState(initialMessages);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
-    const isNewUser = !mockUser.name;
+    const isNewUser = !user.name;
     if (isNewUser) {
       setProfileSetupOpen(true);
     } else {
@@ -65,8 +66,7 @@ export default function AppShell() {
   };
 
   const handleProfileSave = (name: string, emoji: string) => {
-    mockUser.name = name;
-    mockUser.emoji = emoji;
+    setUser(prev => ({...prev, name, emoji}));
     setProfileSetupOpen(false);
     setView('main');
   };
@@ -88,7 +88,7 @@ export default function AppShell() {
 
   const handleSendMessage = (contactId: string, messageText: string) => {
     const message: Message = {
-      sender: mockUser.uid,
+      sender: user.uid,
       text: messageText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
@@ -149,8 +149,25 @@ export default function AppShell() {
         title: "Chat Cleared",
         description: `Your chat history with ${contactName} has been cleared.`,
     });
-};
+  };
 
+  const handleBlockContact = (contactId: string) => {
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
+    setUser(prevUser => ({
+        ...prevUser,
+        blocked: { ...prevUser.blocked, [contactId]: true }
+    }));
+    
+    setActiveChat(null);
+    setView('main');
+
+    toast({
+        title: 'Contact Blocked',
+        description: `You have blocked ${contact.name}.`,
+    });
+  };
 
   const handleAcceptRequest = (request: Update) => {
     if (request.type !== 'request') return;
@@ -200,6 +217,8 @@ export default function AppShell() {
     exit: { opacity: 0, x: -30 },
   };
 
+  const visibleContacts = contacts.filter(c => !user.blocked[c.id]);
+
   const renderView = () => {
     switch (view) {
       case 'auth':
@@ -207,8 +226,8 @@ export default function AppShell() {
       case 'main':
         return (
           <MainView
-            user={mockUser}
-            contacts={contacts}
+            user={user}
+            contacts={visibleContacts}
             updates={updates}
             calls={mockCalls}
             onStartChat={handleStartChat}
@@ -223,7 +242,7 @@ export default function AppShell() {
         if (!activeChat) return null;
         return (
           <ChatView
-            user={mockUser}
+            user={user}
             contact={activeChat}
             messages={messages[activeChat.id] || []}
             onBack={() => {
@@ -235,13 +254,14 @@ export default function AppShell() {
             onOpenProfile={() => setProfileViewOpen(true)}
             onToggleMute={handleToggleMute}
             onClearChat={handleClearChat}
+            onBlockContact={handleBlockContact}
           />
         );
       case 'call':
         if (!activeCall) return null;
         return (
           <CallView
-            user={mockUser}
+            user={user}
             contact={activeCall.contact}
             type={activeCall.type}
             onEndCall={handleEndCall}
@@ -270,7 +290,7 @@ export default function AppShell() {
 
       <ProfileSetupModal isOpen={isProfileSetupOpen} onSave={handleProfileSave} />
       <AddFriendModal isOpen={isAddFriendOpen} onClose={() => setAddFriendOpen(false)} />
-      <ProfileViewModal isOpen={isProfileViewOpen} onClose={() => setProfileViewOpen(false)} user={mockUser} onLogout={handleLogout} />
+      <ProfileViewModal isOpen={isProfileViewOpen} onClose={() => setProfileViewOpen(false)} user={user} onLogout={handleLogout} />
       
       {incomingCall && (
         <IncomingCallModal
