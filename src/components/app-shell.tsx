@@ -178,7 +178,7 @@ export default function AppShell() {
         id="ringtone"
         ref={ringtoneRef}
         loop
-        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        src="data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAAAAAAAAAAAA"
       />
     </div>
   );
