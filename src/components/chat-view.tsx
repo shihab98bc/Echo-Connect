@@ -206,8 +206,10 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
     const chunksRef = useRef<Blob[]>([]);
 
     useInterval(() => {
-        setDuration(prevDuration => prevDuration + 1);
-    }, isRecording ? 1000 : null);
+        if(isRecording) {
+            setDuration(prevDuration => prevDuration + 1);
+        }
+    }, 1000);
 
     const startRecording = useCallback(async () => {
         try {
@@ -219,23 +221,6 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
                 if (e.data.size > 0) chunksRef.current.push(e.data);
             };
 
-            recorder.onstop = () => {
-                stream.getTracks().forEach(track => track.stop());
-                if (chunksRef.current.length === 0) {
-                     // This happens if stop is called immediately or after a cancellation.
-                    return;
-                }
-                const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-                const finalDuration = duration;
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const dataUrl = e.target?.result as string;
-                    onSend(dataUrl, finalDuration);
-                };
-                reader.readAsDataURL(blob);
-                chunksRef.current = [];
-            };
-
             recorder.start();
             setDuration(0);
             setIsRecording(true);
@@ -244,12 +229,13 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
             alert("Could not start recording. Please grant microphone permission.");
             onCancel();
         }
-    }, [onCancel, onSend, duration]);
+    }, [onCancel]);
     
     const stopRecording = (cancelled = false) => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            
             mediaRecorderRef.current.onstop = () => {
-                 mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+                mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
                  if (cancelled) {
                      chunksRef.current = [];
                      onCancel();
@@ -266,12 +252,10 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
                 reader.readAsDataURL(blob);
                 chunksRef.current = [];
             };
+
             mediaRecorderRef.current.stop();
         }
         setIsRecording(false);
-        if (cancelled) {
-            onCancel();
-        }
     };
 
 
