@@ -10,8 +10,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        body: ['PT Sans', 'sans-serif'],
+        headline: ['Poppins', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {
@@ -65,6 +65,17 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+        // Custom App Colors
+        'header-bg': 'hsl(var(--header-bg))',
+        'message-out-bg': 'hsl(var(--message-out-bg))',
+        'message-in-bg': 'hsl(var(--message-in-bg))',
+        'chat-bg': 'hsl(var(--chat-bg))',
+        'icon-color': 'hsl(var(--icon-color))',
+        'button-color': 'hsl(var(--button-color))',
+        'link-color': 'hsl(var(--link-color))',
+      },
+      boxShadow: {
+        'wa': '0 1px 3px hsl(var(--shadow)), 0 1px 2px hsl(var(--shadow))',
       },
       borderRadius: {
         lg: 'var(--radius)',
