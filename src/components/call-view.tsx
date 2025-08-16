@@ -172,6 +172,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     callDocRef.current = doc(db, 'calls', callId);
 
     const subscriptions: (() => void)[] = [];
+    let ignore = false;
 
     const startCall = async () => {
         pcRef.current = new RTCPeerConnection(servers);
@@ -191,15 +192,20 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
                 video: type === 'video',
                 audio: true,
             });
+            if (ignore) return;
+            
             localStreamRef.current = stream;
             setLocalStream(stream);
             setHasPermission(true);
 
             stream.getTracks().forEach((track) => {
-                pc.addTrack(track, stream);
+                if (pcRef.current && pcRef.current.connectionState !== 'closed') {
+                    pc.addTrack(track, stream);
+                }
             });
         } catch (error) {
             console.error('Error accessing media devices.', error);
+            if (ignore) return;
             setHasPermission(false);
             toast({
                 variant: 'destructive',
@@ -229,6 +235,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
 
         if (isCaller) {
             const offerDescription = await pc.createOffer();
+            if (ignore || !pcRef.current || pcRef.current.connectionState === 'closed') return;
             await pc.setLocalDescription(offerDescription);
             const offerPayload = { sdp: offerDescription.sdp, type: offerDescription.type, callerId: user.uid };
             
@@ -242,9 +249,9 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
 
             const unsubAnswer = onSnapshot(callDocRef.current!, (snapshot) => {
                 const data = snapshot.data();
-                if (pc && !pc.currentRemoteDescription && data?.answer) {
+                if (pcRef.current && !pcRef.current.currentRemoteDescription && data?.answer) {
                     const answerDescription = new RTCSessionDescription(data.answer);
-                    pc.setRemoteDescription(answerDescription);
+                    pcRef.current.setRemoteDescription(answerDescription);
                 }
             });
             subscriptions.push(unsubAnswer);
@@ -252,9 +259,9 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             const answerCandidates = collection(callDocRef.current!, 'answerCandidates');
             const unsubAnswerCandidates = onSnapshot(answerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
-                    if (change.type === 'added' && pc) {
+                    if (change.type === 'added' && pcRef.current && pcRef.current.connectionState !== 'closed') {
                         try {
-                            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                            pcRef.current.addIceCandidate(new RTCIceCandidate(change.doc.data()));
                         } catch (e) {
                             console.error("Error adding ICE candidate", e);
                         }
@@ -265,6 +272,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
 
         } else {
             if (!offer || !callDocRef.current) return;
+            if (ignore || !pcRef.current || pcRef.current.connectionState === 'closed') return;
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             const answerDescription = await pc.createAnswer();
             await pc.setLocalDescription(answerDescription);
@@ -274,9 +282,9 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
             const offerCandidates = collection(callDocRef.current!, 'offerCandidates');
             const unsubOfferCandidates = onSnapshot(offerCandidates, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
-                    if (change.type === 'added' && pc) {
+                    if (change.type === 'added' && pcRef.current && pcRef.current.connectionState !== 'closed') {
                        try {
-                            pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                            pcRef.current.addIceCandidate(new RTCIceCandidate(change.doc.data()));
                         } catch (e) {
                             console.error("Error adding ICE candidate", e);
                         }
@@ -290,6 +298,7 @@ export default function CallView({ user, contact, type, onEndCall, callId, isCal
     startCall();
 
     return () => {
+        ignore = true;
         console.log("CallView cleanup running");
         subscriptions.forEach(unsub => unsub());
         handleEndCall();
