@@ -101,7 +101,7 @@ export default function AppShell() {
   const handleEndCall = useCallback(() => {
     setActiveCall(null);
     setCallToAnswer(null);
-    setView(prevView => activeChat ? 'chat' : 'main');
+    setView(activeChat ? 'chat' : 'main');
   }, [activeChat]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
@@ -793,3 +793,5 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
