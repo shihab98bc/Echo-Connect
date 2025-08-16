@@ -76,6 +76,11 @@ export default function AppShell() {
   };
 
   const handleStartChat = (contact: Contact) => {
+    setContacts(prev => prev.map(c => 
+        c.id === contact.id 
+        ? { ...c, unread: 0 }
+        : c
+    ));
     setActiveChat(contact);
     setView('chat');
   };
