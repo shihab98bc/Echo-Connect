@@ -36,7 +36,14 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     setPhotoDataUrl(null);
     setHasFlash(false);
     setIsFlashOn(false);
+    setHasPermission(null);
   }, [stream]);
+  
+  const handleClose = useCallback(() => {
+    cleanupCamera();
+    onClose();
+  }, [cleanupCamera, onClose]);
+
 
   const getCameraStream = useCallback(async (front: boolean) => {
     try {
@@ -53,13 +60,8 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       const videoTrack = newStream.getVideoTracks()[0];
       const capabilities = videoTrack.getCapabilities();
       // @ts-ignore
-      if (capabilities.torch) {
-        setHasFlash(true);
-      } else {
-        setHasFlash(false);
-        setIsFlashOn(false);
-      }
-
+      setHasFlash(!!capabilities.torch);
+      
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
       }
@@ -72,45 +74,53 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
         title: 'Camera Access Denied',
         description: 'Please enable camera permissions in your browser settings.',
       });
-      onClose();
+      handleClose();
     }
-  }, [stream, toast, onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream, toast, handleClose]);
 
   useEffect(() => {
     if (isOpen) {
       setPhotoDataUrl(null);
       getCameraStream(isFrontCamera);
-    } else {
-      cleanupCamera();
+    }
+    
+    return () => {
+        if(isOpen) {
+            cleanupCamera();
+        }
     }
     
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, isFrontCamera]);
+  
+  useEffect(() => {
+    const applyFlash = async () => {
+        if (stream && hasFlash && !isFrontCamera) {
+            const videoTrack = stream.getVideoTracks()[0];
+             try {
+                await videoTrack.applyConstraints({
+                    // @ts-ignore
+                    advanced: [{ torch: isFlashOn }]
+                });
+            } catch (error) {
+                console.error('Error toggling flash:', error);
+            }
+        }
+    };
+    applyFlash();
+  }, [isFlashOn, stream, hasFlash, isFrontCamera]);
+
 
   const handleSwitchCamera = () => {
     const newIsFront = !isFrontCamera;
     setIsFrontCamera(newIsFront);
-    getCameraStream(newIsFront);
+    setIsFlashOn(false);
   };
   
   const handleToggleFlash = async () => {
     if (!stream || !hasFlash || isFrontCamera) return;
-
-    const videoTrack = stream.getVideoTracks()[0];
-    try {
-        await videoTrack.applyConstraints({
-            // @ts-ignore
-            advanced: [{ torch: !isFlashOn }]
-        });
-        setIsFlashOn(!isFlashOn);
-    } catch (error) {
-        console.error('Error toggling flash:', error);
-        toast({
-            variant: 'destructive',
-            title: 'Flash Error',
-            description: 'Could not toggle the flashlight.',
-        });
-    }
+    setIsFlashOn(prev => !prev);
   };
 
   const handleCapture = () => {
@@ -121,13 +131,21 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
-        if(isFlashOn) {
-            // Turn off flash after capture
-            handleToggleFlash();
+        if (isFrontCamera) {
+            context.save();
+            context.scale(-1, 1);
+            context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            context.restore();
+        } else {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
-        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        
         const dataUrl = canvas.toDataURL('image/jpeg');
         setPhotoDataUrl(dataUrl);
+
+        if (isFlashOn) {
+            setIsFlashOn(false);
+        }
       }
     }
   };
@@ -139,16 +157,17 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
   const handleSend = () => {
     if (photoDataUrl) {
       onSendPhoto(photoDataUrl);
+      handleClose();
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-[450px] w-full h-[95vh] max-h-[950px] p-0 gap-0 flex flex-col bg-black text-white border-0">
           <DialogHeader className="p-4 absolute top-0 left-0 z-10 w-full">
              <DialogTitle className="sr-only">Take a photo</DialogTitle>
              <div className="flex justify-between items-center">
-                <Button variant="ghost" size="icon" onClick={onClose} className="bg-black/50 hover:bg-black/70 rounded-full">
+                <Button variant="ghost" size="icon" onClick={handleClose} className="bg-black/50 hover:bg-black/70 rounded-full">
                     <X className="w-6 h-6" />
                 </Button>
              </div>
@@ -180,7 +199,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
                 <motion.video 
                   key="video"
                   ref={videoRef} 
-                  className={cn("w-full h-full object-cover", hasPermission ? 'visible' : 'invisible')} 
+                  className={cn("w-full h-full object-cover", hasPermission ? 'visible' : 'invisible', isFrontCamera && 'scale-x-[-1]')} 
                   autoPlay 
                   playsInline 
                   muted
