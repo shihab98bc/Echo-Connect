@@ -426,7 +426,7 @@ export default function AppShell() {
     } else {
         optimisticContent = content as string;
     }
-
+    
     const optimisticMessage: Message = {
         id: tempId,
         tempId: tempId,
@@ -448,7 +448,8 @@ export default function AppShell() {
         let finalContentUrl = '';
         let lastMessageText = '';
 
-        if ((type === 'image' || type === 'audio') && content) {
+        if (type === 'image' || type === 'audio') {
+            if (!content) throw new Error("File content is missing.");
             const fileExtension = type === 'image' ? (content as File).name.split('.').pop() : 'webm';
             const storageRef = ref(storage, `chats/${chatId}/${Date.now()}.${fileExtension}`);
 
@@ -463,13 +464,12 @@ export default function AppShell() {
             finalContentUrl = content as string;
             lastMessageText = finalContentUrl;
         }
-
-        const messagePayload: Omit<Message, 'id'> & { timestamp: any } = {
+        
+        const messagePayload: Omit<Message, 'id' | 'status'> & { timestamp: any } = {
             sender: currentUser.uid,
             text: finalContentUrl,
             timestamp: serverTimestamp(),
             type: type,
-            status: 'sent',
             tempId: tempId,
         };
         
@@ -483,7 +483,7 @@ export default function AppShell() {
             
             const otherUserDoc = await transaction.get(otherUserDocRef);
             if (!otherUserDoc.exists()) {
-                throw "User not found";
+                throw new Error("User to be messaged not found");
             }
             const otherUserData = otherUserDoc.data() as AppUser;
 
@@ -492,15 +492,14 @@ export default function AppShell() {
                  timestamp: serverTimestamp(),
             };
 
-            const currentUserContactUpdate = {
+            transaction.set(userContactRef, {
                 ...contactUpdatePayload,
                 name: otherUserData.name,
                 emoji: otherUserData.emoji,
                 photoURL: otherUserData.photoURL,
                 unread: 0,
                 isMuted: false,
-            };
-            transaction.set(userContactRef, currentUserContactUpdate, { merge: true });
+            }, { merge: true });
 
             const otherUserContactDoc = await transaction.get(otherUserContactRef);
             if (otherUserContactDoc.exists()) {
@@ -520,7 +519,7 @@ export default function AppShell() {
             }
 
             const newMessageRef = doc(collection(db, 'chats', chatId, 'messages'));
-            transaction.set(newMessageRef, messagePayload);
+            transaction.set(newMessageRef, { ...messagePayload, status: 'sent' });
         });
 
     } catch (error) {
@@ -829,7 +828,7 @@ export default function AppShell() {
             onToggleChatSelection={handleToggleChatSelection}
             onEnterSelectionMode={handleEnterSelectionMode}
             onExitSelectionMode={handleExitSelectionMode}
-            onDeleteSelectedChats={handleDeleteSelectedChats}
+            onDeleteSelectedChats={handleDeleteDeleteSelectedChats}
             updatesViewed={updatesViewed}
             onViewUpdates={() => setUpdatesViewed(true)}
           />
@@ -929,6 +928,8 @@ export default function AppShell() {
     </div>
   );
 }
+
+    
 
     
 
