@@ -110,7 +110,7 @@ export default function AppShell() {
         }
         return prevView;
     });
-}, [activeChat]);
+}, [activeChat, setActiveCall, setCallToAnswer, setView]);
 
   const setupFirestoreListeners = useCallback((uid: string) => {
     const userDocRef = doc(db, 'users', uid);
@@ -253,17 +253,17 @@ export default function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (currentUser?.uid && view !== 'auth') {
+    if (currentUser?.uid) {
       unsubscribeRefs.current.forEach(unsub => unsub());
       unsubscribeRefs.current = [];
       setupFirestoreListeners(currentUser.uid);
     }
+    
     return () => {
       unsubscribeRefs.current.forEach(unsub => unsub());
       unsubscribeRefs.current = [];
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, setupFirestoreListeners]);
 
 
   const handleProfileSave = useCallback(async (name: string, emoji: string) => {
@@ -359,13 +359,13 @@ export default function AppShell() {
         console.error("Error marking messages as seen:", error);
       }
     }
-  }, [currentUser, messages, toast]);
+  }, [currentUser, messages, toast, setActiveChat, setView]);
 
   const handleSendMessage = useCallback(async (contactId: string, content: string | File, type: Message['type'] = 'text', options: { duration?: number, caption?: string } = {}) => {
     if (!currentUser) return;
   
     const chatId = [currentUser.uid, contactId].sort().join('_');
-    const tempId = `temp_${Date.now()}`;
+    const tempId = `temp_${Date.now()}_${Math.random()}`;
   
     // --- Optimistic UI Update ---
     let optimisticContent = '';
@@ -617,7 +617,7 @@ export default function AppShell() {
     const callId = [currentUser.uid, contact.id].sort().join('_');
     setActiveCall({ contact, type, callId });
     setView('call');
-  }, [currentUser, toast]);
+  }, [currentUser, toast, setView, setActiveCall]);
   
   const handleClearChat = useCallback(async (contactId: string) => {
     if (!currentUser) return;
