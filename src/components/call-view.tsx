@@ -6,9 +6,8 @@ import { AppUser, Contact } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { EndCallIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon, SwitchCameraIcon, SpeakerIcon } from '@/components/icons';
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion, useDragControls } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
@@ -20,14 +19,14 @@ interface CallViewProps {
   onEndCall: () => void;
 }
 
-const ParticipantVideo = ({ participant, isLocal, videoStream, isVideoEnabled, isAudioOnly }: { participant: { id: string, name: string, emoji: string }, isLocal: boolean, videoStream: MediaStream | null, isVideoEnabled: boolean, isAudioOnly: boolean }) => {
+const ParticipantVideo = ({ participant, isLocal, stream, isVideoEnabled, isAudioOnly, isMuted }: { participant: { id?: string, name: string, emoji: string }, isLocal: boolean, stream: MediaStream | null, isVideoEnabled: boolean, isAudioOnly: boolean, isMuted?: boolean }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        if (videoRef.current && videoStream) {
-            videoRef.current.srcObject = videoStream;
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
         }
-    }, [videoStream]);
+    }, [stream]);
     
     return (
         <motion.div 
@@ -41,7 +40,7 @@ const ParticipantVideo = ({ participant, isLocal, videoStream, isVideoEnabled, i
             )}
         >
             <AnimatePresence>
-            {(isAudioOnly || !isVideoEnabled) ? (
+            {(isAudioOnly || !isVideoEnabled || !stream) ? (
                  <motion.div 
                     key="avatar"
                     initial={{ opacity: 0 }}
@@ -53,19 +52,10 @@ const ParticipantVideo = ({ participant, isLocal, videoStream, isVideoEnabled, i
                         <AvatarFallback className="bg-white/10">{participant.emoji}</AvatarFallback>
                     </Avatar>
                 </motion.div>
-            ) : (
-                <Image 
-                    src={`https://placehold.co/400x400.png?text=${participant.emoji}`}
-                    alt={`${participant.name}'s video placeholder`}
-                    data-ai-hint="person portrait"
-                    width={400}
-                    height={400}
-                    className="opacity-20 object-cover h-full w-full"
-                />
-            )}
+            ) : null}
             </AnimatePresence>
             
-            <video ref={videoRef} className={cn("absolute w-full h-full object-cover -z-10", isVideoEnabled ? "opacity-100" : "opacity-0")} autoPlay muted={isLocal} playsInline />
+            <video ref={videoRef} className={cn("absolute w-full h-full object-cover", (isVideoEnabled && stream) ? "opacity-100" : "opacity-0")} autoPlay muted={isLocal || isMuted} playsInline />
 
             <div className="absolute bottom-2 left-2 bg-black/50 p-1 rounded text-xs">{participant.name}</div>
         </motion.div>
@@ -107,10 +97,12 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(type === 'voice');
   const [isVideoEnabled, setIsVideoEnabled] = useState(type === 'video');
-  const [isCameraReversed, setIsCameraReversed] = useState(false);
-  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showControls, setShowControls] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   const localVideoContainerRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
@@ -118,34 +110,34 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
 
   useEffect(() => {
     let stream: MediaStream;
-    const getCameraPermission = async () => {
-      if (type === 'voice') {
-        setHasCameraPermission(false);
-        return;
-      }
+    const getMedia = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: isCameraReversed ? 'user' : 'environment' } });
-        setHasCameraPermission(true);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            video: type === 'video',
+            audio: true,
+        });
+        setLocalStream(stream);
+        setHasPermission(true);
+
       } catch (error) {
-        console.error('Error accessing camera:', error);
-        setHasCameraPermission(false);
+        console.error('Error accessing media devices.', error);
+        setHasPermission(false);
         toast({
           variant: 'destructive',
-          title: 'Camera Access Denied',
-          description: 'Please enable camera permissions in your browser settings to use this app.',
+          title: 'Media Access Denied',
+          description: 'Please enable camera and microphone permissions in your browser settings to use this feature.',
         });
+        onEndCall();
       }
     };
 
-    getCameraPermission();
+    getMedia();
 
     return () => {
-        stream?.getTracks().forEach(track => track.stop());
+        localStream?.getTracks().forEach(track => track.stop());
     };
-  }, [type, isCameraReversed, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, toast, onEndCall]);
 
   useEffect(() => {
     if (controlsTimerRef.current) {
@@ -174,13 +166,16 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
   const localParticipant = { id: user.uid, name: "You", emoji: user.emoji };
   
   const toggleMute = () => {
+    localStream?.getAudioTracks().forEach(track => {
+        track.enabled = !track.enabled;
+    });
     setIsMuted(m => !m);
     toast({ title: isMuted ? 'Microphone Unmuted' : 'Microphone Muted'});
   };
 
   const toggleVideo = () => {
     if (type === 'voice') return;
-    if (hasCameraPermission === false) {
+    if (hasPermission === false) {
         toast({
             variant: 'destructive',
             title: 'Camera Not Available',
@@ -188,27 +183,54 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
         });
         return;
     }
+    localStream?.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+    })
     setIsVideoEnabled(v => !v);
     toast({ title: isVideoEnabled ? 'Video Off' : 'Video On'});
   };
+
+  const switchCamera = async () => {
+    if(!isVideoEnabled || !localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    // @ts-ignore
+    const currentFacingMode = videoTrack.getSettings().facingMode;
+    const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+
+    // stop current track
+    videoTrack.stop();
+
+    try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: newFacingMode },
+            audio: true
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        
+        // replace track in local stream
+        localStream.removeTrack(videoTrack);
+        localStream.addTrack(newVideoTrack);
+        
+        toast({ title: 'Camera Switched'});
+    } catch(err) {
+        console.error("Error switching camera", err);
+        toast({ title: 'Could not switch camera', variant: 'destructive'});
+        // revert to old track if failed
+        localStream.addTrack(videoTrack);
+    }
+  }
 
   const toggleSpeaker = () => {
     setIsSpeakerOn(s => !s);
     toast({ title: isSpeakerOn ? 'Speaker Off' : 'Speaker On'});
   };
 
-  const switchCamera = () => {
-    if(!isVideoEnabled) return;
-    setIsCameraReversed(r => !r);
-    toast({ title: 'Camera Switched'});
-  }
-
   return (
     <div className="absolute inset-0 bg-gray-900 text-white flex flex-col z-50 overflow-hidden" onClick={toggleControls}>
         {/* Background */}
         <AnimatePresence>
             <motion.div
-                key={isVideoEnabled && hasCameraPermission ? 'video-bg' : 'audio-bg'}
+                key={isVideoEnabled && hasPermission ? 'video-bg' : 'audio-bg'}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -217,14 +239,10 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                     !isVideoEnabled && "bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900"
                 )}
             >
-                {(isVideoEnabled && hasCameraPermission && !isAudioCall) ? (
-                     <video ref={videoRef} className="absolute w-full h-full object-cover opacity-30 blur-sm" autoPlay muted playsInline />
-                ) : (
-                    <div className="absolute inset-0 opacity-20">
-                        <motion.div className="absolute h-96 w-96 bg-green-500/50 rounded-full -top-20 -left-20" animate={{ scale: [1, 1.2, 1], x: [0, 20, 0] }} transition={{ duration: 15, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' }} />
-                        <motion.div className="absolute h-80 w-80 bg-blue-500/50 rounded-full -bottom-20 -right-20" animate={{ scale: [1, 1.2, 1], y: [0, -20, 0] }} transition={{ duration: 12, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' }}/>
-                    </div>
-                )}
+               <div className="absolute inset-0 opacity-20">
+                    <motion.div className="absolute h-96 w-96 bg-green-500/50 rounded-full -top-20 -left-20" animate={{ scale: [1, 1.2, 1], x: [0, 20, 0] }} transition={{ duration: 15, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' }} />
+                    <motion.div className="absolute h-80 w-80 bg-blue-500/50 rounded-full -bottom-20 -right-20" animate={{ scale: [1, 1.2, 1], y: [0, -20, 0] }} transition={{ duration: 12, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' }}/>
+                </div>
             </motion.div>
         </AnimatePresence>
 
@@ -283,10 +301,10 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                     exit={{ opacity: 0, scale: 0.9 }}
                 >
                     <div className="absolute inset-0 w-full h-full" onClick={e => { e.stopPropagation(); toggleControls(); }}>
-                       <ParticipantVideo participant={contact} isLocal={false} videoStream={null} isVideoEnabled={isVideoEnabled} isAudioOnly={false}/>
+                       <ParticipantVideo participant={contact} isLocal={false} stream={remoteStream} isVideoEnabled={true} isAudioOnly={false} isMuted={!isSpeakerOn}/>
                     </div>
 
-                    {isVideoEnabled && (
+                    
                       <motion.div 
                           className="absolute w-28 h-40 z-10 cursor-move"
                           drag
@@ -297,15 +315,15 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                           dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
                           onClick={e => e.stopPropagation()}
                       >
-                          <ParticipantVideo participant={localParticipant} isLocal={true} videoStream={videoRef.current?.srcObject as MediaStream ?? null} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
+                          <ParticipantVideo participant={localParticipant} isLocal={true} stream={localStream} isVideoEnabled={isVideoEnabled} isAudioOnly={false} />
                       </motion.div>
-                    )}
+                    
 
-                    {hasCameraPermission === false && type === 'video' && (
+                    {hasPermission === false && type === 'video' && (
                         <Alert variant="destructive" className="absolute top-24 w-auto z-20">
-                            <AlertTitle>Camera Access Denied</AlertTitle>
+                            <AlertTitle>Media Access Denied</AlertTitle>
                             <AlertDescription>
-                                Please enable camera permissions.
+                                Please enable camera and mic permissions.
                             </AlertDescription>
                         </Alert>
                     )}
@@ -332,7 +350,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                         size="icon"
                         onClick={toggleVideo}
                         className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20", !isVideoEnabled && "bg-white/10", isAudioCall && "hidden")}
-                        disabled={isAudioCall || hasCameraPermission === false}
+                        disabled={isAudioCall || hasPermission === false}
                     >
                         {isVideoEnabled ? <VideoIcon className="h-7 w-7" /> : <VideoOffIcon className="h-7 w-7" />}
                     </Button>
@@ -349,7 +367,7 @@ export default function CallView({ user, contact, type, onEndCall }: CallViewPro
                         size="icon"
                         onClick={switchCamera}
                         className={cn("w-14 h-14 rounded-full text-white hover:bg-white/20 disabled:opacity-50", isAudioCall && "hidden")}
-                        disabled={isAudioCall || !isVideoEnabled || hasCameraPermission === false}
+                        disabled={isAudioCall || !isVideoEnabled || hasPermission === false}
                     >
                         <SwitchCameraIcon className="h-7 w-7" />
                     </Button>
