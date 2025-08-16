@@ -15,7 +15,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc } from 'firebase/firestore';
 
 
 export type View = 'auth' | 'main' | 'chat' | 'call';
@@ -104,6 +104,17 @@ export default function AppShell() {
                 setView('main');
                 setupFirestoreListeners(userData.uid);
             } else {
+                // This is a new user, show profile setup
+                // Create a temporary user object to allow the app to render
+                const tempUser: AppUser = {
+                    uid: firebaseUser.uid,
+                    name: firebaseUser.displayName || 'New User',
+                    emoji: '👋',
+                    email: firebaseUser.email,
+                    photoURL: firebaseUser.photoURL,
+                };
+                setCurrentUser(tempUser);
+                setView('main');
                 setProfileSetupOpen(true);
             }
         } else {
@@ -176,6 +187,28 @@ export default function AppShell() {
         };
         await setDoc(doc(db, 'users', firebaseUser.uid), userPayload);
         
+        // Add welcome bot
+        const welcomeBotContact = {
+            id: 'welcome-bot',
+            name: 'EchoConnect Bot',
+            emoji: '🤖',
+            lastMessage: "Welcome! Let's get you started.",
+            timestamp: serverTimestamp(),
+            unread: 1,
+            isMuted: false,
+        };
+        await setDoc(doc(db, 'users', firebaseUser.uid, 'contacts', 'welcome-bot'), welcomeBotContact);
+
+        const chatId = [firebaseUser.uid, 'welcome-bot'].sort().join('_');
+        const welcomeMessage = {
+            sender: 'welcome-bot',
+            text: "Welcome to EchoConnect! To add a friend, click the icon in the top right. You can find your own user ID in your profile. Share it with friends to connect!",
+            timestamp: serverTimestamp(),
+            type: 'text'
+        };
+        await addDoc(collection(db, 'chats', chatId, 'messages'), welcomeMessage);
+
+
         setCurrentUser(userPayload);
         setProfileSetupOpen(false);
         setView('main');
@@ -197,7 +230,6 @@ export default function AppShell() {
     if (!currentUser) return;
     
     const chatId = [currentUser.uid, contactId].sort().join('_');
-    const messagesRef = collection(db, 'chats', chatId, 'messages');
     
     const message: Omit<Message, 'id'> = {
       sender: currentUser.uid,
