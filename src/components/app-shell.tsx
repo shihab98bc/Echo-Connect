@@ -9,6 +9,7 @@ import ProfileSetupModal from '@/components/modals/profile-setup-modal';
 import AddFriendModal from '@/components/modals/add-friend-modal';
 import ProfileViewModal from '@/components/modals/profile-view-modal';
 import IncomingCallModal from '@/components/modals/incoming-call-modal';
+import SecurityModal from '@/components/modals/security-modal'; // Import the new modal
 import { mockUser, mockContacts as initialContacts, mockMessages as initialMessages, mockUpdates as initialUpdates, mockCalls } from '@/lib/mock-data';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
@@ -30,6 +31,7 @@ export default function AppShell() {
   const [isProfileSetupOpen, setProfileSetupOpen] = useState(false);
   const [isAddFriendOpen, setAddFriendOpen] = useState(false);
   const [isProfileViewOpen, setProfileViewOpen] = useState(false);
+  const [isSecurityModalOpen, setSecurityModalOpen] = useState(false); // State for the new modal
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
 
   // State for views
@@ -250,7 +252,7 @@ export default function AppShell() {
             setIncomingCall(nextCall);
         }
       }
-    }, 10000);
+    }, 5000);
     return () => clearTimeout(timer);
   }, [isAuthenticated, incomingCall, activeCall]);
   */
@@ -353,7 +355,17 @@ export default function AppShell() {
         setContacts(prev => [newContact, ...prev]);
         setAddFriendOpen(false);
       }} />
-      <ProfileViewModal isOpen={isProfileViewOpen} onClose={() => setProfileViewOpen(false)} user={user} onLogout={handleLogout} />
+      <ProfileViewModal 
+        isOpen={isProfileViewOpen} 
+        onClose={() => setProfileViewOpen(false)} 
+        user={user} 
+        onLogout={handleLogout} 
+        onOpenSecurity={() => {
+          setProfileViewOpen(false);
+          setSecurityModalOpen(true);
+        }}
+      />
+      <SecurityModal isOpen={isSecurityModalOpen} onClose={() => setSecurityModalOpen(false)} />
       
       {incomingCall && (
         <IncomingCallModal

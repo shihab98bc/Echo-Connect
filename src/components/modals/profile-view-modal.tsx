@@ -7,17 +7,19 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { summarizeUserActivity } from '@/app/actions';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldCheckIcon } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
+import { Separator } from '../ui/separator';
 
 interface ProfileViewModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: AppUser;
   onLogout: () => void;
+  onOpenSecurity: () => void;
 }
 
-export default function ProfileViewModal({ isOpen, onClose, user, onLogout }: ProfileViewModalProps) {
+export default function ProfileViewModal({ isOpen, onClose, user, onLogout, onOpenSecurity }: ProfileViewModalProps) {
   const [summary, setSummary] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -76,6 +78,16 @@ export default function ProfileViewModal({ isOpen, onClose, user, onLogout }: Pr
             )}
         </div>
         
+        <Separator />
+
+        <button onClick={onOpenSecurity} className="flex items-center gap-4 text-left p-2 -mx-2 rounded-md hover:bg-secondary transition-colors">
+            <ShieldCheckIcon className="h-6 w-6 text-primary" />
+            <div>
+                <h3 className="font-semibold">Security</h3>
+                <p className="text-sm text-muted-foreground">End-to-end encryption</p>
+            </div>
+        </button>
+
         <DialogFooter className="mt-4">
           <Button variant="destructive" onClick={onLogout} className="w-full">Logout</Button>
         </DialogFooter>
