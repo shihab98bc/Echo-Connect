@@ -181,7 +181,6 @@ const MessageBubble = ({ text, timestamp, isSent, type = 'text', duration, statu
 const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duration: number) => void, onCancel: () => void }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [duration, setDuration] = useState(0);
-    const durationRef = useRef(0);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -205,10 +204,11 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
                     return;
                 }
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+                const finalDuration = duration;
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const dataUrl = e.target?.result as string;
-                    onSend(dataUrl, durationRef.current);
+                    onSend(dataUrl, finalDuration);
                 };
                 reader.readAsDataURL(blob);
                 chunksRef.current = [];
@@ -217,15 +217,14 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
             recorder.start();
             setIsRecording(true);
             timerRef.current = setInterval(() => {
-                durationRef.current += 1;
-                setDuration(d => d + 1);
+                setDuration(prevDuration => prevDuration + 1);
             }, 1000);
         } catch (error) {
             console.error("Error starting recording:", error);
             alert("Could not start recording. Please grant microphone permission.");
             onCancel();
         }
-    }, [onCancel, onSend]);
+    }, [onCancel, onSend, duration]);
 
     const stopRecording = (cancelled = false) => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
