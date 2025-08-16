@@ -15,7 +15,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db, storage } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser, updateProfile } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, getDoc, updateDoc, arrayUnion, serverTimestamp, getDocs, query, where, writeBatch, orderBy, limit, Timestamp, addDoc, increment } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 
 
@@ -220,8 +220,13 @@ export default function AppShell() {
     }
   };
 
-  const handleStartChat = (contact: Contact) => {
-    // Mark messages as read (optional, can be implemented)
+  const handleStartChat = async (contact: Contact) => {
+    if (!currentUser) return;
+    // Mark messages as read
+     if (contact.unread > 0) {
+      const contactRef = doc(db, 'users', currentUser.uid, 'contacts', contact.id);
+      await updateDoc(contactRef, { unread: 0 });
+    }
     setActiveChat(contact);
     setView('chat');
   };
@@ -259,7 +264,11 @@ export default function AppShell() {
       await updateDoc(userContactRef, { lastMessage: lastMessageText, timestamp });
 
       const otherUserContactRef = doc(db, 'users', contactId, 'contacts', currentUser.uid);
-      await updateDoc(otherUserContactRef, { lastMessage: lastMessageText, timestamp });
+      await updateDoc(otherUserContactRef, { 
+        lastMessage: lastMessageText, 
+        timestamp,
+        unread: increment(1)
+      });
 
     } catch (error) {
         console.error("Error sending message:", error);

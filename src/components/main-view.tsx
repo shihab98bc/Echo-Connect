@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { AppUser, Contact, Call, Update } from './app-shell';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -58,9 +59,10 @@ const formatContactTimestamp = (timestamp: any) => {
 };
 
 
-const ListItem = ({ children, className, ...props }: { children: React.ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>) => (
-    <div className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)} {...props}>{children}</div>
-);
+const ListItem = motion(React.forwardRef<HTMLDivElement, { children: React.ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>>(({ children, className, ...props }, ref) => (
+    <div ref={ref} className={cn("flex items-center p-3 hover:bg-secondary transition-colors cursor-pointer", className)} {...props}>{children}</div>
+)));
+
 
 const ContactItem = ({ contact, onStartChat, isSelectionMode, isSelected, onToggleSelection, onEnterSelectionMode }: { 
     contact: Contact; 
@@ -90,6 +92,10 @@ const ContactItem = ({ contact, onStartChat, isSelectionMode, isSelected, onTogg
             onClick={handleClick} 
             onContextMenu={handleContextMenu}
             className={cn(isSelected && "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-100/80")}
+            layout
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
         >
             <AnimatePresence>
             {isSelectionMode && (
@@ -181,6 +187,17 @@ export default function MainView({
     onAcceptRequest, onRejectRequest, onStartCall, isSelectionMode, selectedChats,
     onToggleChatSelection, onEnterSelectionMode, onExitSelectionMode, onDeleteSelectedChats
 }: MainViewProps) {
+
+  const listContainerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05,
+      },
+    },
+  };
+  
   return (
     <div className="w-full h-full flex flex-col bg-background">
       <header className="bg-header-bg text-icon-color shadow-md z-10">
@@ -234,16 +251,19 @@ export default function MainView({
             <ScrollArea className="h-full">
                 <TabsContent value="chats">
                     {contacts.length > 0 ? (
-                        contacts.map(contact => 
-                            <ContactItem 
-                                key={contact.id} 
-                                contact={contact} 
-                                onStartChat={onStartChat} 
-                                isSelectionMode={isSelectionMode}
-                                isSelected={selectedChats.includes(contact.id)}
-                                onToggleSelection={onToggleChatSelection}
-                                onEnterSelectionMode={onEnterSelectionMode}
-                            />)
+                        <motion.div variants={listContainerVariants} initial="hidden" animate="visible">
+                          {contacts.map(contact => 
+                              <ContactItem 
+                                  key={contact.id} 
+                                  contact={contact} 
+                                  onStartChat={onStartChat} 
+                                  isSelectionMode={isSelectionMode}
+                                  isSelected={selectedChats.includes(contact.id)}
+                                  onToggleSelection={onToggleChatSelection}
+                                  onEnterSelectionMode={onEnterSelectionMode}
+                              />
+                          )}
+                        </motion.div>
                     ) : (
                         <div className="text-center text-muted-foreground p-8">No chats yet. Add a friend to start chatting!</div>
                     )}
