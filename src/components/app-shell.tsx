@@ -72,13 +72,18 @@ export default function AppShell() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (isAuthenticated && !incomingCall) {
-        setIncomingCall(mockCalls.find(c => c.status === 'incoming') || null);
-        ringtoneRef.current?.play().catch(e => console.error("Autoplay failed", e));
+      if (isAuthenticated && !incomingCall && mockCalls.some(c => c.status === 'incoming')) {
+        setIncomingCall(mockCalls.find(c => c.status === 'incoming')!);
       }
     }, 10000);
     return () => clearTimeout(timer);
   }, [isAuthenticated, incomingCall]);
+
+  useEffect(() => {
+    if (incomingCall && ringtoneRef.current) {
+        ringtoneRef.current.play().catch(e => console.error("Autoplay failed", e));
+    }
+  }, [incomingCall])
 
   const viewVariants = {
     initial: { opacity: 0, x: 30 },
@@ -158,12 +163,18 @@ export default function AppShell() {
             const callContact = incomingCall.contact;
             const callType = incomingCall.type;
             setIncomingCall(null);
-            ringtoneRef.current?.pause();
+            if (ringtoneRef.current) {
+                ringtoneRef.current.pause();
+                ringtoneRef.current.currentTime = 0;
+            }
             handleStartCall(callContact, callType);
           }}
           onReject={() => {
             setIncomingCall(null);
-            ringtoneRef.current?.pause();
+            if (ringtoneRef.current) {
+                ringtoneRef.current.pause();
+                ringtoneRef.current.currentTime = 0;
+            }
           }}
         />
       )}
@@ -172,7 +183,7 @@ export default function AppShell() {
         id="ringtone"
         ref={ringtoneRef}
         loop
-        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
       />
     </div>
   );
