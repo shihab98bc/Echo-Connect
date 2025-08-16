@@ -30,6 +30,7 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
 
   useEffect(() => {
     const getCameraStream = async (front: boolean) => {
+      cleanupCamera();
       try {
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: front ? 'user' : 'environment' },
@@ -58,11 +59,11 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
     }
 
     return () => {
-      if (stream) {
+      if (isOpen && !photoDataUrl) {
         cleanupCamera();
       }
     };
-  }, [isOpen, isFrontCamera, photoDataUrl, toast, onClose, cleanupCamera, stream]);
+  }, [isOpen, isFrontCamera, photoDataUrl, toast, onClose, cleanupCamera]);
 
   const handleCapture = () => {
     if (videoRef.current && canvasRef.current) {
@@ -112,10 +113,12 @@ export default function CameraModal({ isOpen, onClose, onSendPhoto }: CameraModa
       <DialogContent className="max-w-md w-full p-0 gap-0">
         <DialogHeader className="p-4">
           <DialogTitle>Send a Photo</DialogTitle>
-          <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-        </DialogClose>
+          <DialogClose asChild>
+            <Button variant="ghost" size="icon" className="absolute right-4 top-3 h-7 w-7">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </Button>
+          </DialogClose>
         </DialogHeader>
 
         <div className="relative aspect-square bg-black flex items-center justify-center">

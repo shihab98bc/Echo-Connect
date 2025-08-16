@@ -16,11 +16,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from '@/hooks/use-toast';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Paperclip, PauseCircleIcon, PlayCircle, Trash2, Camera } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { Timestamp } from 'firebase/firestore';
+import CameraModal from './modals/camera-modal';
 
 
 interface ChatViewProps {
@@ -275,12 +276,13 @@ const VoiceRecorder = ({ onSend, onCancel }: { onSend: (dataUrl: string, duratio
 export default function ChatView({ user, contact, messages, onBack, onStartCall, onSendMessage, onOpenProfile, onClearChat, onBlockContact, onDeleteChat, onFileSelected }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (newMessage.trim()) {
       onSendMessage(contact.id, newMessage.trim());
       setNewMessage('');
@@ -309,6 +311,10 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
     onSendMessage(contact.id, dataUrl, 'audio', { duration });
     setIsRecording(false);
   };
+  
+  const handleSendPhoto = (photoDataUrl: string) => {
+      onSendMessage(contact.id, photoDataUrl, 'image', { caption: '' });
+  }
 
 
   useEffect(() => {
@@ -372,24 +378,25 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
         {isRecording ? (
             <VoiceRecorder onSend={handleSendVoiceMessage} onCancel={() => setIsRecording(false)} />
         ) : (
-            <>
-                <div className="flex-grow relative">
+             <>
+                <div className="flex-grow flex items-center bg-white rounded-full px-3 shadow-sm">
                     <Input 
                         id="chat-input"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend(e)}
                         placeholder="Type a message..." 
-                        className="flex-grow rounded-full bg-white pr-12"
+                        className="flex-grow bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 h-12 pr-0"
                         autoComplete="off"
                         disabled={isContactBlocked}
                     />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick} disabled={isContactBlocked}>
-                            <Paperclip className="h-5 w-5" />
-                        </Button>
-                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-                    </div>
+                    <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={handleAttachClick} disabled={isContactBlocked}>
+                        <Paperclip className="h-5 w-5" />
+                    </Button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                     <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-muted-foreground hover:bg-black/10" onClick={() => setIsCameraOpen(true)} disabled={isContactBlocked}>
+                        <Camera className="h-5 w-5" />
+                    </Button>
                 </div>
                 <AnimatePresence mode="wait">
                     <motion.div
@@ -413,6 +420,11 @@ export default function ChatView({ user, contact, messages, onBack, onStartCall,
             </>
         )}
       </div>
+      <CameraModal 
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onSendPhoto={handleSendPhoto}
+      />
     </div>
   );
 }
